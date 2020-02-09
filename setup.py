@@ -37,7 +37,7 @@ setup(name='baselines',
           'joblib',
           'cloudpickle',
           'click',
-          'opencv-python'
+          'opencv-python', 'crefi'
       ],
       extras_require=extras,
       description='OpenAI baselines: high quality implementations of reinforcement learning algorithms',
