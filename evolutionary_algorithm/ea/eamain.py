@@ -2,7 +2,7 @@ from keras.models import Sequential
 from keras.layers import Conv2D, Flatten, Dense
 from keras.optimizers import RMSprop
 from keras.initializers import RandomUniform
-from baselines.GA.gym_wrapper import MainGymWrapper
+from evolutionary_algorithm.ea.gym_wrapper import MainGymWrapper
 import numpy as np
 import random
 from time import sleep
