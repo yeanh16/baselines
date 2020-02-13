@@ -19,11 +19,11 @@ import gym
 
 #pool = mp.Pool(mp.cpu_count())
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 100
-SELECTION_RATE = 0.1
-MUTATION_POWER = 0.02
-ELITE_RATIO = 0.02
-NUMBEROFGENERATIONS = 1000
+POPULATION_SIZE = 4
+SELECTION_RATE = 0.5
+MUTATION_POWER = 0.01
+ELITE_RATIO = 0.25
+NUMBEROFGENERATIONS = 3
 FRAMES_IN_OBSERVATION = 4
 FRAME_SIZE = 84
 INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
@@ -33,9 +33,18 @@ os.makedirs(os.path.dirname(__file__) + "/models/" + ENV_NAME, exist_ok=True)
 MODEL_FILEPATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')) + "-model.h5")
 os.makedirs(os.path.dirname(__file__) + "/logs/" + ENV_NAME, exist_ok=True)
 LOGPATH = str(os.path.dirname(__file__) + "/logs/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
+USE_LOAD_WEIGHTS = True
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-13_04-09" + "-model.h5")
 
-class ConvolutionalNeuralNetwork:
+class BaseNeuralNetwork:
     def __init__(self, input_shape, action_space):
+        self.input_shape = input_shape
+        self.action_space = action_space
+
+class ConvolutionalNeuralNetwork():
+    def __init__(self, input_shape, action_space, filepath=None):
+        #BaseNeuralNetwork.__init__(self, input_shape, action_space)
+        #super(BaseNeuralNetwork, self).__init__()
         self.number_of_actions = action_space
         self.weight_initialiser = RandomUniform(minval=-0.1, maxval=0.1)
         self.model = Sequential()
@@ -73,6 +82,9 @@ class ConvolutionalNeuralNetwork:
                                              rho=0.95,
                                              epsilon=0.01),
                            metrics=["accuracy"])
+        if filepath:
+            print("Loading model...")
+            self.model.model.load_weights(filepath)
         #self.model.summary()
 
     def predict(self, state):
@@ -91,13 +103,12 @@ class ConvolutionalNeuralNetwork:
     def get_weights(self):
         return self.model.get_weights()
 
+    def load_weights(self, filepath):
+        self.model = self.model.load_weights(filepath)
+
     def save_model(self):
-        self.model.save(MODEL_FILEPATH)
+        self.model.save_weights(MODEL_FILEPATH)
         #del self.model
-
-
-
-
 
 class EA:
     def __init__(self, env_name, pop_size, input_shape, selection_rate):
@@ -113,10 +124,22 @@ class EA:
         self.cumulative_frames = 0 #the total ammount of frames processed
 
     def _intialise_pop(self):
-        pop = []
-        for i in range(0, self.pop_size):
-            pop.append(ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n))
-        return pop
+        if not USE_LOAD_WEIGHTS:
+            pop = []
+            for i in range(0, self.pop_size):
+                pop.append(ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n))
+            return pop
+        else:
+            pop = []
+            model = ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
+            pop.append(model)
+            #the rest of the population will be mutations of this model
+            # mutation
+            while len(pop) < POPULATION_SIZE:
+                new_model = copy.deepcopy(model)
+                new_model = self._mutation(new_model)
+                pop.append(new_model)
+            return pop
 
     def train_evolutionary_algorithm(self):
         best_fitness = -9999
@@ -151,7 +174,7 @@ class EA:
                 print("Generation max fitness increase, saving model...")
                 best_fitness = pop_fitness[-1][1]
                 pop_fitness[-1][0].save_model()  # save top model
-            print("Population fitness: " + str(pop_fitness))
+            #print("Population fitness: " + str(pop_fitness))
 
             # add elites
             new_pop = []
@@ -183,10 +206,10 @@ class EA:
 
     def _mutation(self, model):
         # add random gaussian noise to every weight
-        print("weights before mutation: " + str(np.array(model.get_weights)))
+        #print("weights before mutation: " + str(np.array(model.get_weights)))
         new_weights = [w + np.random.normal(0, MUTATION_POWER) for w in model.get_weights()]
         model.set_weights(new_weights)
-        print("weights after mutation " + str(np.array(model.get_weights)))
+        #print("weights after mutation " + str(np.array(model.get_weights)))
         return model
 
     def _selection(self):
