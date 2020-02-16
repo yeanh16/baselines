@@ -8,6 +8,7 @@ from evolutionary_algorithm.ea.gym_wrapper import MainGymWrapper
 import numpy as np
 import random
 import os
+import time
 import datetime
 import copy
 
@@ -19,11 +20,14 @@ import gym
 
 #pool = mp.Pool(mp.cpu_count())
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 4
-SELECTION_RATE = 0.5
-MUTATION_POWER = 0.01
-ELITE_RATIO = 0.25
-NUMBEROFGENERATIONS = 3
+POPULATION_SIZE = 100
+INITIALISER_WEIGHTS_RANGE = 0.1
+SELECTION_RATE = 0.2
+MUTATE_CHANCE = 0.1 #mutate chance per weight vector for a node in a model
+MUTATION_POWER = 0.02
+ELITE_RATIO = 0.05
+NUMBEROFGENERATIONS = 5000
+MODEL_USED = "SIMPLE"
 FRAMES_IN_OBSERVATION = 4
 FRAME_SIZE = 84
 INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
@@ -33,7 +37,7 @@ os.makedirs(os.path.dirname(__file__) + "/models/" + ENV_NAME, exist_ok=True)
 MODEL_FILEPATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')) + "-model.h5")
 os.makedirs(os.path.dirname(__file__) + "/logs/" + ENV_NAME, exist_ok=True)
 LOGPATH = str(os.path.dirname(__file__) + "/logs/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
-USE_LOAD_WEIGHTS = True
+USE_LOAD_WEIGHTS = False
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-13_04-09" + "-model.h5")
 
 class BaseNeuralNetwork:
@@ -46,7 +50,7 @@ class ConvolutionalNeuralNetwork():
         #BaseNeuralNetwork.__init__(self, input_shape, action_space)
         #super(BaseNeuralNetwork, self).__init__()
         self.number_of_actions = action_space
-        self.weight_initialiser = RandomUniform(minval=-0.1, maxval=0.1)
+        self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
         self.model = Sequential()
         self.model.add(Conv2D(filters=32,
                               kernel_size=8,
@@ -110,6 +114,61 @@ class ConvolutionalNeuralNetwork():
         self.model.save_weights(MODEL_FILEPATH)
         #del self.model
 
+class SimpleNeuralNetwork():
+    def __init__(self, input_shape, action_space, filepath=None):
+        #BaseNeuralNetwork.__init__(self, input_shape, action_space)
+        #super(BaseNeuralNetwork, self).__init__()
+        self.number_of_actions = action_space
+        self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
+        self.model = Sequential()
+        self.model.add(Dense( 128,
+                              activation="relu",
+                              input_shape=input_shape,
+                              kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense( 128,
+                              activation="relu",
+                              kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense( 128,
+                              activation="relu",
+                              kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense(128,
+                             activation="relu",
+                             kernel_initializer=self.weight_initialiser))
+        self.model.add(Flatten())
+        self.model.add(Dense(action_space))
+        self.model.compile(loss="mean_squared_error",
+                           optimizer=RMSprop(lr=0.00025,
+                                             rho=0.95,
+                                             epsilon=0.01),
+                           metrics=["accuracy"])
+        if filepath:
+            print("Loading model...")
+            self.model.model.load_weights(filepath)
+        #self.model.summary() 61,190 weights
+
+    def predict(self, state):
+        #print("state: " + str(state))
+        if np.random.rand() < EPSILON:
+            print("random action taken")
+            return random.randrange(self.number_of_actions)
+        q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
+        #print("output layer: " + str(q_values))
+        #print("predict " + str(np.argmax(q_values[0])))
+        return np.argmax(q_values[0])
+
+    def set_weights(self, weights):
+        self.model.set_weights(weights)
+
+    def get_weights(self):
+        return self.model.get_weights()
+
+    def load_weights(self, filepath):
+        self.model = self.model.load_weights(filepath)
+
+    def save_model(self):
+        self.model.save_weights(MODEL_FILEPATH)
+        #del self.model
+
 class EA:
     def __init__(self, env_name, pop_size, input_shape, selection_rate):
         self.env_name = env_name
@@ -124,32 +183,52 @@ class EA:
         self.cumulative_frames = 0 #the total ammount of frames processed
 
     def _intialise_pop(self):
-        if not USE_LOAD_WEIGHTS:
-            pop = []
-            for i in range(0, self.pop_size):
-                pop.append(ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n))
-            return pop
+        if MODEL_USED == "SIMPLE":
+            if not USE_LOAD_WEIGHTS:
+                pop = []
+                for i in range(0, self.pop_size):
+                    pop.append(SimpleNeuralNetwork(self.input_shape, self.env.action_space.n))
+                return pop
+            else:
+                pop = []
+                model = SimpleNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
+                pop.append(model)
+                #the rest of the population will be mutations of this model
+                # mutation
+                while len(pop) < POPULATION_SIZE:
+                    new_model = copy.deepcopy(model)
+                    new_model = self._mutation(new_model)
+                    pop.append(new_model)
+                return pop
         else:
-            pop = []
-            model = ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
-            pop.append(model)
-            #the rest of the population will be mutations of this model
-            # mutation
-            while len(pop) < POPULATION_SIZE:
-                new_model = copy.deepcopy(model)
-                new_model = self._mutation(new_model)
-                pop.append(new_model)
-            return pop
+            if not USE_LOAD_WEIGHTS:
+                pop = []
+                for i in range(0, self.pop_size):
+                    pop.append(ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n))
+                return pop
+            else:
+                pop = []
+                model = ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
+                pop.append(model)
+                #the rest of the population will be mutations of this model
+                # mutation
+                while len(pop) < POPULATION_SIZE:
+                    new_model = copy.deepcopy(model)
+                    new_model = self._mutation(new_model)
+                    pop.append(new_model)
+                return pop
+
 
     def train_evolutionary_algorithm(self):
         best_fitness = -9999
+        start_time = time.perf_counter()
+        cumulative_frames = 0
         for g in range(0, NUMBEROFGENERATIONS):
             print("Generation " + str(g))
             pop_fitness = []
-            cumulative_fitness = 0
+            gen_cumulative_fitness = 0
             min_gen_fitness = 9999
             max_gen_fitness = -9999
-            cumulative_frames = 0
             # model = ConvolutionalNeuralNetwork(INPUT_SHAPE, env.action_space.n)
             count = 0
             # fitness_result_objects = [pool.apply_async(self._fitness_test, args=(model, env)) for model in self.pop for env in self.envs]
@@ -162,14 +241,15 @@ class EA:
                     min_gen_fitness = episode_reward
                 if episode_reward > max_gen_fitness:
                     max_gen_fitness = episode_reward
-                cumulative_fitness += episode_reward
+                gen_cumulative_fitness += episode_reward
                 pop_fitness.append((model, episode_reward))
-            av_gen_fitness = cumulative_fitness / self.pop_size
+            av_gen_fitness = gen_cumulative_fitness / self.pop_size
             pop_fitness.sort(key=lambda x: x[1])
             print("Generation min fitness: " + str(min_gen_fitness)
                   + " max_fitness: " + str(max_gen_fitness)
-                  + " av_fitness: " + str(av_gen_fitness))
-            self.logger.log_line_csv([min_gen_fitness] + [max_gen_fitness] + [av_gen_fitness] + [cumulative_frames])
+                  + " av_fitness: " + str(av_gen_fitness)
+                  + " time: " + str(time.perf_counter() - start_time))
+            self.logger.log_line_csv([min_gen_fitness, max_gen_fitness, av_gen_fitness, cumulative_frames, (time.perf_counter() - start_time)])
             if pop_fitness[-1][1] > best_fitness:
                 print("Generation max fitness increase, saving model...")
                 best_fitness = pop_fitness[-1][1]
@@ -207,6 +287,11 @@ class EA:
     def _mutation(self, model):
         # add random gaussian noise to every weight
         #print("weights before mutation: " + str(np.array(model.get_weights)))
+        def mutate(w):
+            result = w
+            if np.random.uniform(0, 1) < MUTATE_CHANCE:
+                result = [i + np.random.normal((0, MUTATION_POWER)) for i in w]
+            return result
         new_weights = [w + np.random.normal(0, MUTATION_POWER) for w in model.get_weights()]
         model.set_weights(new_weights)
         #print("weights after mutation " + str(np.array(model.get_weights)))
@@ -245,9 +330,9 @@ class Logger:
         scores_file = open(self.logpath, "a")
         with scores_file:
             writer = csv.writer(scores_file)
-            writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_POWER", "ELITE_RATIO"])
-            writer.writerow([POPULATION_SIZE, SELECTION_RATE, MUTATION_POWER, ELITE_RATIO])
-            writer.writerow(["min", "max", "av", "frames"])
+            writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO", "INITIALISER_WEIGHT_RAGE","MODEL_USED"])
+            writer.writerow([POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE ,MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE, MODEL_USED])
+            writer.writerow(["min", "max", "av", "frames", "time"])
         ##/write header
 
     def log_line_csv(self, line):
@@ -257,7 +342,7 @@ class Logger:
         scores_file = open(self.logpath, "a")
         with scores_file:
             writer = csv.writer(scores_file)
-            writer.writerow([line])
+            writer.writerow(line)
 
 
 
@@ -271,7 +356,7 @@ def __main__():
 __main__()
 
 # test_model = Sequential()
-# test_model.add(Dense(2, activation='relu', use_bias=False, kernel_initializer='ones', input_shape=(1,)))
+# test_model.add(Dense(2, activation='relu', use_bias=False, kernel_initializer='ones', input_shape=(4,4,3,)))
 # test_model.add(Dense(2, activation='relu', use_bias=False, kernel_initializer='ones'))
 # test_model.add(Dense(2, use_bias=False, kernel_initializer='ones'))
 #
@@ -282,11 +367,22 @@ __main__()
 # for x in np.nditer(test_weights, op_flags=['readwrite'], flags=['refs_ok']):
 #     x[...]
 #
-# weights = [w + 2 for w in test_model.get_weights()]
-# print(weights)
+# np.ndarray.tolist(test_weights)
+#
+#
+# def mutate(w):
+#     if np.random.uniform(0, 1) < 0.5:
+#         return w + 2
+#     return w
+#
+# weights = [mutate(w) for w in test_model.get_weights()]
+# #print(weights)
 #
 # print("test weights before: \n" + str(test_weights))
 #
-# test_model.set_weights(weights)
+# for idx, value in np.ndenumerate(test_weights):
+#     print(idx, value)
 #
-# print("test weights: \n" + str(test_weights))
+# test_model.set_weights(test_weights)
+#
+# print("test weights: \n" + str(test_model.get_weights()))
