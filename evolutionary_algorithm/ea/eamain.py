@@ -5,6 +5,8 @@ from keras.layers import Conv2D, Flatten, Dense
 from keras.optimizers import RMSprop, Adam, SGD
 from keras.initializers import RandomUniform
 from evolutionary_algorithm.ea.gym_wrapper import MainGymWrapper
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+import ray
 import numpy as np
 import random
 import os
@@ -20,12 +22,12 @@ import gym
 
 #pool = mp.Pool(mp.cpu_count())
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 100
+POPULATION_SIZE = 10
 INITIALISER_WEIGHTS_RANGE = 0.1
-SELECTION_RATE = 0.2
+SELECTION_RATE = 0.5
 MUTATE_CHANCE = 0.1 #mutate chance per weight vector for a node in a model
 MUTATION_POWER = 0.02
-ELITE_RATIO = 0.05
+ELITE_RATIO = 0.2
 NUMBEROFGENERATIONS = 5000
 MODEL_USED = "SIMPLE"
 FRAMES_IN_OBSERVATION = 4
@@ -174,6 +176,9 @@ class EA:
         self.env_name = env_name
         self.pop_size = pop_size
         self.env = MainGymWrapper.wrap(gym.make(self.env_name))
+        #self.nproc = 8
+        #self.envs = [self._make_env(self.env_name, seed) for seed in range(self.nproc)]
+        #self.envs = SubprocVecEnv(self.envs)
         #for i in range(0, mp.cpu_count()):
         #    self.envs.append(MainGymWrapper.wrap(gym.make(self.env_name)))
         self.input_shape = input_shape
@@ -181,6 +186,13 @@ class EA:
         self.selection_rate = selection_rate
         self.logger = Logger(LOGPATH)
         self.cumulative_frames = 0 #the total ammount of frames processed
+
+    def _make_env(self, env_id, seed):
+        def _f():
+            env = MainGymWrapper.wrap(gym.make(self.env_name))
+            env.seed(seed)
+            return env
+        return _f
 
     def _intialise_pop(self):
         if MODEL_USED == "SIMPLE":
@@ -220,6 +232,15 @@ class EA:
 
 
     def train_evolutionary_algorithm(self):
+        # self.envs.reset()
+        # for t in range(10000):
+        #     ut = np.stack([self.envs.action_space.sample() for _ in range(self.nproc)])
+        #     xtp1, rt, done, info = self.envs.step(ut)
+        #     self.envs.render()
+        #     print(done)
+        ray.init()
+        num_workers = 8
+        workers = [RolloutWorker.remote() for _ in range(num_workers)]
         best_fitness = -9999
         start_time = time.perf_counter()
         cumulative_frames = 0
@@ -232,17 +253,50 @@ class EA:
             # model = ConvolutionalNeuralNetwork(INPUT_SHAPE, env.action_space.n)
             count = 0
             # fitness_result_objects = [pool.apply_async(self._fitness_test, args=(model, env)) for model in self.pop for env in self.envs]
-            for model in self.pop:
-                count += 1
-                _, episode_reward, frames = self._fitness_test(model)
-                cumulative_frames += frames
-                print("Chromosome " + str(count) + " reward: " + str(episode_reward))
-                if episode_reward < min_gen_fitness:
-                    min_gen_fitness = episode_reward
-                if episode_reward > max_gen_fitness:
-                    max_gen_fitness = episode_reward
-                gen_cumulative_fitness += episode_reward
-                pop_fitness.append((model, episode_reward))
+
+            # for model in self.pop:
+            #     count += 1
+            #     _, episode_reward, frames = self._fitness_test(model)
+            #     cumulative_frames += frames
+            #     print("Chromosome " + str(count) + " reward: " + str(episode_reward))
+            #     if episode_reward < min_gen_fitness:
+            #         min_gen_fitness = episode_reward
+            #     if episode_reward > max_gen_fitness:
+            #         max_gen_fitness = episode_reward
+            #     gen_cumulative_fitness += episode_reward
+            #     pop_fitness.append((model, episode_reward))
+
+            #set up a worker for each model
+            model_counter = 0
+            while model_counter < POPULATION_SIZE:
+                for worker_num in range(num_workers):
+                    if (model_counter < POPULATION_SIZE):
+                        model = self.pop[model_counter]
+                        model_counter += 1
+                        model_id = ray.put(model, weakref=True)
+                        worker = workers[worker_num]
+                        object_ids = worker.set_model.remote(model_id)
+                    else:
+                        continue
+                ray.get(object_ids) #no return here, just setting models
+
+                #rollout each worker and store results in object_ids
+                object_ids = [worker.rollout.remote() for worker in workers]
+                #[obj_id], object_ids = ray.wait(object_ids)
+                results = ray.get(object_ids)
+                for result in results:
+                    model = result[0]
+                    episode_reward = result[1]
+                    frames = result[2]
+                    print("Reward: " + str(episode_reward))
+                    cumulative_frames += frames
+                    if episode_reward < min_gen_fitness:
+                        min_gen_fitness = episode_reward
+                    if episode_reward > max_gen_fitness:
+                        max_gen_fitness = episode_reward
+                    gen_cumulative_fitness += episode_reward
+                    pop_fitness.append((model, episode_reward))
+
             av_gen_fitness = gen_cumulative_fitness / self.pop_size
             pop_fitness.sort(key=lambda x: x[1])
             print("Generation min fitness: " + str(min_gen_fitness)
@@ -318,7 +372,47 @@ class EA:
         #print(str(episode_reward))
         return model, episode_reward, frames_count
 
+@ray.remote
+class RolloutWorker(object):
+    def __init__(self):
+        # Tell numpy to only use one core. If we don't do this, each actor may
+        # try to use all of the cores and the resulting contention may result
+        # in no speedup over the serial version. Note that if numpy is using
+        # OpenBLAS, then you need to set OPENBLAS_NUM_THREADS=1, and you
+        # probably need to do it from the command line (so it happens before
+        # numpy is imported).
+        os.environ["MKL_NUM_THREADS"] = "1"
+        self.model = None
+        self.env = MainGymWrapper.wrap(gym.make(ENV_NAME))
 
+    def rollout(self):
+        """Evaluates  env and model until the env returns "Terminated".
+
+        Returns:
+            model: the model used
+            episode_reward: A list of observations
+            frames_count: number of frames used to train
+
+        """
+        if self.model is None:
+            print("Model is not set for worker!")
+            return EOFError
+        state = self.env.reset()
+        terminated = False
+        episode_reward = 0
+        frames_count = 0
+        while not terminated:
+            action = self.model.predict(state)
+            state, reward, terminated, info = self.env.step(action)
+            frames_count += 1
+            #self.env.render()
+            episode_reward += reward
+            # sleep(0.01)
+        # print(str(episode_reward))
+        return self.model, episode_reward, frames_count
+
+    def set_model(self, model):
+        self.model = model
 
 class Logger:
     def __init__(self, logpath):
@@ -330,7 +424,7 @@ class Logger:
         scores_file = open(self.logpath, "a")
         with scores_file:
             writer = csv.writer(scores_file)
-            writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO", "INITIALISER_WEIGHT_RAGE","MODEL_USED"])
+            writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO", "INITIALISER_WEIGHT_RANGE", "MODEL_USED"])
             writer.writerow([POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE ,MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE, MODEL_USED])
             writer.writerow(["min", "max", "av", "frames", "time"])
         ##/write header
@@ -350,8 +444,9 @@ class Logger:
 
 def __main__():
     #pass
-    run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
-    run.train_evolutionary_algorithm()
+    if __name__ == "__main__":
+        run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
+        run.train_evolutionary_algorithm()
 
 __main__()
 
