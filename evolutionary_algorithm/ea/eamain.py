@@ -4,8 +4,10 @@ from keras.models import Sequential
 from keras.layers import Conv2D, Flatten, Dense
 from keras.optimizers import RMSprop, Adam, SGD
 from keras.initializers import RandomUniform
-from evolutionary_algorithm.ea.gym_wrapper import MainGymWrapper
-from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+from evolutionary_algorithm.ea.gym_wrapper import MainGymWrapper, RamGymWrapper
+from pympler.tracker import SummaryTracker
+from pympler import muppy, summary, refbrowser
+
 import ray
 import numpy as np
 import random
@@ -13,44 +15,53 @@ import os
 import time
 import datetime
 import copy
-
-#import multiprocessing as mp
+import gc
+import gym
 
 from time import sleep
 
-import gym
 
-#pool = mp.Pool(mp.cpu_count())
+gc.enable()
+
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 10
-INITIALISER_WEIGHTS_RANGE = 0.1
+POPULATION_SIZE = 8
+INITIALISER_WEIGHTS_RANGE = 5
 SELECTION_RATE = 0.5
-MUTATE_CHANCE = 0.1 #mutate chance per weight vector for a node in a model
+MUTATE_CHANCE = 0.1  # mutate chance per weight vector for a node in a model
 MUTATION_POWER = 0.02
-ELITE_RATIO = 0.2
+ELITE_RATIO = 0.25
 NUMBEROFGENERATIONS = 5000
 MODEL_USED = "SIMPLE"
-FRAMES_IN_OBSERVATION = 4
+NUM_WORKERS = 8
+FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
+USE_RAM = True
 FRAME_SIZE = 84
-INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
-EPSILON = 0.0 #exploration/random move rate
-ENV_NAME = "SpaceInvadersNoFrameskip-v4"
+if not USE_RAM:
+    INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
+else:
+    INPUT_SHAPE = (FRAMES_IN_OBSERVATION, 128)
+EPSILON = 0.0  # exploration/random move rate
+ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
 os.makedirs(os.path.dirname(__file__) + "/models/" + ENV_NAME, exist_ok=True)
-MODEL_FILEPATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')) + "-model.h5")
+MODEL_FILEPATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + str(
+    datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')) + "-model.h5")
 os.makedirs(os.path.dirname(__file__) + "/logs/" + ENV_NAME, exist_ok=True)
-LOGPATH = str(os.path.dirname(__file__) + "/logs/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
+LOGPATH = str(
+    os.path.dirname(__file__) + "/logs/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
 USE_LOAD_WEIGHTS = False
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-13_04-09" + "-model.h5")
+
 
 class BaseNeuralNetwork:
     def __init__(self, input_shape, action_space):
         self.input_shape = input_shape
         self.action_space = action_space
 
+
 class ConvolutionalNeuralNetwork():
     def __init__(self, input_shape, action_space, filepath=None):
-        #BaseNeuralNetwork.__init__(self, input_shape, action_space)
-        #super(BaseNeuralNetwork, self).__init__()
+        # BaseNeuralNetwork.__init__(self, input_shape, action_space)
+        # super(BaseNeuralNetwork, self).__init__()
         self.number_of_actions = action_space
         self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
         self.model = Sequential()
@@ -91,16 +102,16 @@ class ConvolutionalNeuralNetwork():
         if filepath:
             print("Loading model...")
             self.model.model.load_weights(filepath)
-        #self.model.summary()
+        # self.model.summary()
 
     def predict(self, state):
-        #print("state: " + str(state))
+        # print("state: " + str(state))
         if np.random.rand() < EPSILON:
             print("random action taken")
             return random.randrange(self.number_of_actions)
         q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
-        #print("output layer: " + str(q_values))
-        #print("predict " + str(np.argmax(q_values[0])))
+        # print("output layer: " + str(q_values))
+        # print("predict " + str(np.argmax(q_values[0])))
         return np.argmax(q_values[0])
 
     def set_weights(self, weights):
@@ -114,25 +125,26 @@ class ConvolutionalNeuralNetwork():
 
     def save_model(self):
         self.model.save_weights(MODEL_FILEPATH)
-        #del self.model
+        # del self.model
+
 
 class SimpleNeuralNetwork():
     def __init__(self, input_shape, action_space, filepath=None):
-        #BaseNeuralNetwork.__init__(self, input_shape, action_space)
-        #super(BaseNeuralNetwork, self).__init__()
+        # BaseNeuralNetwork.__init__(self, input_shape, action_space)
+        # super(BaseNeuralNetwork, self).__init__()
         self.number_of_actions = action_space
         self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
         self.model = Sequential()
-        self.model.add(Dense( 128,
-                              activation="relu",
-                              input_shape=input_shape,
-                              kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense( 128,
-                              activation="relu",
-                              kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense( 128,
-                              activation="relu",
-                              kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense(128,
+                             activation="relu",
+                             input_shape=input_shape,
+                             kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense(128,
+                             activation="relu",
+                             kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense(128,
+                             activation="relu",
+                             kernel_initializer=self.weight_initialiser))
         self.model.add(Dense(128,
                              activation="relu",
                              kernel_initializer=self.weight_initialiser))
@@ -146,16 +158,16 @@ class SimpleNeuralNetwork():
         if filepath:
             print("Loading model...")
             self.model.model.load_weights(filepath)
-        #self.model.summary() 61,190 weights
+        # self.model.summary() 61,190 weights
 
     def predict(self, state):
-        #print("state: " + str(state))
+        # print("state: " + str(state))
         if np.random.rand() < EPSILON:
             print("random action taken")
             return random.randrange(self.number_of_actions)
         q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
-        #print("output layer: " + str(q_values))
-        #print("predict " + str(np.argmax(q_values[0])))
+        # print("output layer: " + str(q_values))
+        # print("predict " + str(np.argmax(q_values[0])))
         return np.argmax(q_values[0])
 
     def set_weights(self, weights):
@@ -169,29 +181,34 @@ class SimpleNeuralNetwork():
 
     def save_model(self):
         self.model.save_weights(MODEL_FILEPATH)
-        #del self.model
+        # del self.model
+
 
 class EA:
     def __init__(self, env_name, pop_size, input_shape, selection_rate):
         self.env_name = env_name
         self.pop_size = pop_size
-        self.env = MainGymWrapper.wrap(gym.make(self.env_name))
-        #self.nproc = 8
-        #self.envs = [self._make_env(self.env_name, seed) for seed in range(self.nproc)]
-        #self.envs = SubprocVecEnv(self.envs)
-        #for i in range(0, mp.cpu_count()):
+        if not USE_RAM:
+            self.env = MainGymWrapper.wrap(gym.make(self.env_name))
+        else:
+            self.env = RamGymWrapper.wrap(gym.make(self.env_name))
+        # self.nproc = 8
+        # self.envs = [self._make_env(self.env_name, seed) for seed in range(self.nproc)]
+        # self.envs = SubprocVecEnv(self.envs)
+        # for i in range(0, mp.cpu_count()):
         #    self.envs.append(MainGymWrapper.wrap(gym.make(self.env_name)))
         self.input_shape = input_shape
         self.pop = self._intialise_pop()
         self.selection_rate = selection_rate
         self.logger = Logger(LOGPATH)
-        self.cumulative_frames = 0 #the total ammount of frames processed
+        self.cumulative_frames = 0  # the total ammount of frames processed
 
     def _make_env(self, env_id, seed):
         def _f():
             env = MainGymWrapper.wrap(gym.make(self.env_name))
             env.seed(seed)
             return env
+
         return _f
 
     def _intialise_pop(self):
@@ -205,7 +222,7 @@ class EA:
                 pop = []
                 model = SimpleNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
                 pop.append(model)
-                #the rest of the population will be mutations of this model
+                # the rest of the population will be mutations of this model
                 # mutation
                 while len(pop) < POPULATION_SIZE:
                     new_model = copy.deepcopy(model)
@@ -222,14 +239,13 @@ class EA:
                 pop = []
                 model = ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
                 pop.append(model)
-                #the rest of the population will be mutations of this model
+                # the rest of the population will be mutations of this model
                 # mutation
                 while len(pop) < POPULATION_SIZE:
                     new_model = copy.deepcopy(model)
                     new_model = self._mutation(new_model)
                     pop.append(new_model)
                 return pop
-
 
     def train_evolutionary_algorithm(self):
         # self.envs.reset()
@@ -238,9 +254,10 @@ class EA:
         #     xtp1, rt, done, info = self.envs.step(ut)
         #     self.envs.render()
         #     print(done)
-        ray.init()
-        num_workers = 8
-        workers = [RolloutWorker.remote() for _ in range(num_workers)]
+        ray.init(num_gpus=1,
+                 memory=3200 * 1024 * 1024,
+                 object_store_memory=2000 * 1024 * 1024)
+        workers = [RolloutWorker.remote() for _ in range(NUM_WORKERS)]
         best_fitness = -9999
         start_time = time.perf_counter()
         cumulative_frames = 0
@@ -252,7 +269,6 @@ class EA:
             max_gen_fitness = -9999
             # model = ConvolutionalNeuralNetwork(INPUT_SHAPE, env.action_space.n)
             count = 0
-            # fitness_result_objects = [pool.apply_async(self._fitness_test, args=(model, env)) for model in self.pop for env in self.envs]
 
             # for model in self.pop:
             #     count += 1
@@ -266,10 +282,12 @@ class EA:
             #     gen_cumulative_fitness += episode_reward
             #     pop_fitness.append((model, episode_reward))
 
-            #set up a worker for each model
+            # set up a worker for each model
             model_counter = 0
+            gc.collect()
+            done = False
             while model_counter < POPULATION_SIZE:
-                for worker_num in range(num_workers):
+                for worker_num in range(NUM_WORKERS):
                     if (model_counter < POPULATION_SIZE):
                         model = self.pop[model_counter]
                         model_counter += 1
@@ -278,11 +296,11 @@ class EA:
                         object_ids = worker.set_model.remote(model_id)
                     else:
                         continue
-                ray.get(object_ids) #no return here, just setting models
+                # ray.get(object_ids) #no return here, just setting models
 
-                #rollout each worker and store results in object_ids
+                # rollout each worker and store results in object_ids
                 object_ids = [worker.rollout.remote() for worker in workers]
-                #[obj_id], object_ids = ray.wait(object_ids)
+                # [obj_id], object_ids = ray.wait(object_ids)
                 results = ray.get(object_ids)
                 for result in results:
                     model = result[0]
@@ -303,24 +321,25 @@ class EA:
                   + " max_fitness: " + str(max_gen_fitness)
                   + " av_fitness: " + str(av_gen_fitness)
                   + " time: " + str(time.perf_counter() - start_time))
-            self.logger.log_line_csv([min_gen_fitness, max_gen_fitness, av_gen_fitness, cumulative_frames, (time.perf_counter() - start_time)])
+            self.logger.log_line_csv([min_gen_fitness, max_gen_fitness, av_gen_fitness, cumulative_frames,
+                                      (time.perf_counter() - start_time)])
             if pop_fitness[-1][1] > best_fitness:
                 print("Generation max fitness increase, saving model...")
                 best_fitness = pop_fitness[-1][1]
                 pop_fitness[-1][0].save_model()  # save top model
-            #print("Population fitness: " + str(pop_fitness))
+            # print("Population fitness: " + str(pop_fitness))
 
             # add elites
             new_pop = []
             selected = []
             number_of_elites = int(POPULATION_SIZE * ELITE_RATIO)
-            for i in range(POPULATION_SIZE-number_of_elites, POPULATION_SIZE):
+            for i in range(POPULATION_SIZE - number_of_elites, POPULATION_SIZE):
                 selected.append(pop_fitness[i])
                 new_pop.append(pop_fitness[i][0])
 
             # selection, fill up rest of selection list
-            begin_index = int(POPULATION_SIZE -(POPULATION_SIZE*SELECTION_RATE))
-            for i in range(begin_index, POPULATION_SIZE-number_of_elites):
+            begin_index = int(POPULATION_SIZE - (POPULATION_SIZE * SELECTION_RATE))
+            for i in range(begin_index, POPULATION_SIZE - number_of_elites):
                 selected.append(pop_fitness[i])
 
             # mutation
@@ -329,26 +348,41 @@ class EA:
                 new_model = self._mutation(new_model)
                 new_pop.append(new_model)
 
-            #next generation
+            # object_ids = []
+            # def _new_model():
+            #     new_model = copy.deepcopy(selected[np.random.randint(0, int(POPULATION_SIZE * SELECTION_RATE))][0])
+            #     return new_model
+            #
+            # object_ids = [self._mutation.remote(ray.put(_new_model())) for i in range(POPULATION_SIZE - len(new_pop))]
+            # results = ray.get(object_ids)
+            # new_pop.append(results)
+
+            # next generation
             self.pop = new_pop
 
+            all_objects = muppy.get_objects()
+            sum1 = summary.summarize(all_objects)
+            # Prints out a summary of the large objects
+            summary.print_(sum1)
 
-    # results = [r.get()[1] for r in fitness_result_objects]
-    # pool.close
-    # pool.join
-    # print(fitness_result_objects)
 
-    def _mutation(self, model):
+
+    def _mutation(self, model=None):
+        if model is None:
+            print("BUG!")
+            return
+
         # add random gaussian noise to every weight
-        #print("weights before mutation: " + str(np.array(model.get_weights)))
+        # print("weights before mutation: " + str(np.array(model.get_weights)))
         def mutate(w):
             result = w
             if np.random.uniform(0, 1) < MUTATE_CHANCE:
                 result = [i + np.random.normal((0, MUTATION_POWER)) for i in w]
             return result
+
         new_weights = [w + np.random.normal(0, MUTATION_POWER) for w in model.get_weights()]
         model.set_weights(new_weights)
-        #print("weights after mutation " + str(np.array(model.get_weights)))
+        # print("weights after mutation " + str(np.array(model.get_weights)))
         return model
 
     def _selection(self):
@@ -369,10 +403,13 @@ class EA:
             # env.render()
             episode_reward += reward
             # sleep(0.01)
-        #print(str(episode_reward))
+        # print(str(episode_reward))
         return model, episode_reward, frames_count
 
-@ray.remote
+
+#test_model = SimpleNeuralNetwork((4, 128), 6)
+
+@ray.remote(memory = (300 * 1024 * 1024), object_store_memory=(100*1024*1024))
 class RolloutWorker(object):
     def __init__(self):
         # Tell numpy to only use one core. If we don't do this, each actor may
@@ -383,7 +420,10 @@ class RolloutWorker(object):
         # numpy is imported).
         os.environ["MKL_NUM_THREADS"] = "1"
         self.model = None
-        self.env = MainGymWrapper.wrap(gym.make(ENV_NAME))
+        if not USE_RAM:
+            self.env = MainGymWrapper.wrap(gym.make(ENV_NAME))
+        else:
+            self.env = RamGymWrapper.wrap(gym.make(ENV_NAME))
 
     def rollout(self):
         """Evaluates  env and model until the env returns "Terminated".
@@ -405,14 +445,17 @@ class RolloutWorker(object):
             action = self.model.predict(state)
             state, reward, terminated, info = self.env.step(action)
             frames_count += 1
-            #self.env.render()
+            # self.env.render()
             episode_reward += reward
             # sleep(0.01)
         # print(str(episode_reward))
         return self.model, episode_reward, frames_count
 
     def set_model(self, model):
+        #del self.model
         self.model = model
+        #pass
+
 
 class Logger:
     def __init__(self, logpath):
@@ -424,8 +467,11 @@ class Logger:
         scores_file = open(self.logpath, "a")
         with scores_file:
             writer = csv.writer(scores_file)
-            writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO", "INITIALISER_WEIGHT_RANGE", "MODEL_USED"])
-            writer.writerow([POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE ,MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE, MODEL_USED])
+            writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO",
+                             "INITIALISER_WEIGHT_RANGE", "MODEL_USED"])
+            writer.writerow(
+                [POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE, MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE,
+                 MODEL_USED])
             writer.writerow(["min", "max", "av", "frames", "time"])
         ##/write header
 
@@ -439,14 +485,12 @@ class Logger:
             writer.writerow(line)
 
 
-
-
-
 def __main__():
-    #pass
+    # pass
     if __name__ == "__main__":
         run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
         run.train_evolutionary_algorithm()
+
 
 __main__()
 
