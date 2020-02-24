@@ -30,8 +30,9 @@ SELECTION_RATE = 0.5
 MUTATE_CHANCE = 0.1  # mutate chance per weight vector for a node in a model
 MUTATION_POWER = 0.02
 ELITE_RATIO = 0.25
+FITNESS_RUNS = 5 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
-MODEL_USED = "SIMPLE"
+MODEL_USED = "SIMPLE" #SIMPLE or anything else
 NUM_WORKERS = 8
 FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
 USE_RAM = True
@@ -248,72 +249,81 @@ class EA:
                 return pop
 
     def train_evolutionary_algorithm(self):
-        # self.envs.reset()
-        # for t in range(10000):
-        #     ut = np.stack([self.envs.action_space.sample() for _ in range(self.nproc)])
-        #     xtp1, rt, done, info = self.envs.step(ut)
-        #     self.envs.render()
-        #     print(done)
-        ray.init(num_gpus=1,
-                 memory=3200 * 1024 * 1024,
-                 object_store_memory=2000 * 1024 * 1024)
-        workers = [RolloutWorker.remote() for _ in range(NUM_WORKERS)]
+
+
+        # ray.init(num_gpus=1,
+        #          memory=3200 * 1024 * 1024,
+        #          object_store_memory=2000 * 1024 * 1024)
+        # workers = [RolloutWorker.remote() for _ in range(NUM_WORKERS)]
+
         best_fitness = -9999
         start_time = time.perf_counter()
         cumulative_frames = 0
         for g in range(0, NUMBEROFGENERATIONS):
             print("Generation " + str(g))
-            pop_fitness = []
+            if g == 0:
+                pop_fitness = []
+            else:
+                pop_fitness = pop_fitness[int(-POPULATION_SIZE*ELITE_RATIO):]
             gen_cumulative_fitness = 0
             min_gen_fitness = 9999
             max_gen_fitness = -9999
             # model = ConvolutionalNeuralNetwork(INPUT_SHAPE, env.action_space.n)
             count = 0
 
-            # for model in self.pop:
-            #     count += 1
-            #     _, episode_reward, frames = self._fitness_test(model)
-            #     cumulative_frames += frames
-            #     print("Chromosome " + str(count) + " reward: " + str(episode_reward))
-            #     if episode_reward < min_gen_fitness:
-            #         min_gen_fitness = episode_reward
-            #     if episode_reward > max_gen_fitness:
-            #         max_gen_fitness = episode_reward
-            #     gen_cumulative_fitness += episode_reward
-            #     pop_fitness.append((model, episode_reward))
-
-            # set up a worker for each model
-            model_counter = 0
-            gc.collect()
-            done = False
-            while model_counter < POPULATION_SIZE:
-                for worker_num in range(NUM_WORKERS):
-                    if (model_counter < POPULATION_SIZE):
-                        model = self.pop[model_counter]
-                        model_counter += 1
-                        model_id = ray.put(model, weakref=True)
-                        worker = workers[worker_num]
-                        object_ids = worker.set_model.remote(model_id)
-                    else:
-                        continue
-                # ray.get(object_ids) #no return here, just setting models
-
-                # rollout each worker and store results in object_ids
-                object_ids = [worker.rollout.remote() for worker in workers]
-                # [obj_id], object_ids = ray.wait(object_ids)
-                results = ray.get(object_ids)
-                for result in results:
-                    model = result[0]
-                    episode_reward = result[1]
-                    frames = result[2]
-                    print("Reward: " + str(episode_reward))
+            for model in self.pop:
+                count += 1
+                if count > POPULATION_SIZE*ELITE_RATIO or g == 0:
+                    _, episode_reward, frames = self._fitness_test(model)
                     cumulative_frames += frames
+                    print("Chromosome " + str(count) + " reward: " + str(episode_reward))
                     if episode_reward < min_gen_fitness:
                         min_gen_fitness = episode_reward
                     if episode_reward > max_gen_fitness:
                         max_gen_fitness = episode_reward
                     gen_cumulative_fitness += episode_reward
                     pop_fitness.append((model, episode_reward))
+                else:
+                    episode_reward = pop_fitness[count-1][1]
+                    if episode_reward < min_gen_fitness:
+                        min_gen_fitness = episode_reward
+                    if episode_reward > max_gen_fitness:
+                        max_gen_fitness = episode_reward
+                    gen_cumulative_fitness += episode_reward
+                    print("Chromosome " + str(count) + " reward: " + str(pop_fitness[count-1][1]))
+
+            # # set up a worker for each model
+            # model_counter = 0
+            # gc.collect()
+            # done = False
+            # while model_counter < POPULATION_SIZE:
+            #     for worker_num in range(NUM_WORKERS):
+            #         if (model_counter < POPULATION_SIZE):
+            #             model = self.pop[model_counter]
+            #             model_counter += 1
+            #             model_id = ray.put(model, weakref=True)
+            #             worker = workers[worker_num]
+            #             object_ids = worker.set_model.remote(model_id)
+            #         else:
+            #             continue
+            #     # ray.get(object_ids) #no return here, just setting models
+            #
+            #     # rollout each worker and store results in object_ids
+            #     object_ids = [worker.rollout.remote() for worker in workers]
+            #     # [obj_id], object_ids = ray.wait(object_ids)
+            #     results = ray.get(object_ids)
+            #     for result in results:
+            #         model = result[0]
+            #         episode_reward = result[1]
+            #         frames = result[2]
+            #         print("Reward: " + str(episode_reward))
+            #         cumulative_frames += frames
+            #         if episode_reward < min_gen_fitness:
+            #             min_gen_fitness = episode_reward
+            #         if episode_reward > max_gen_fitness:
+            #             max_gen_fitness = episode_reward
+            #         gen_cumulative_fitness += episode_reward
+            #         pop_fitness.append((model, episode_reward))
 
             av_gen_fitness = gen_cumulative_fitness / self.pop_size
             pop_fitness.sort(key=lambda x: x[1])
@@ -326,6 +336,7 @@ class EA:
             if pop_fitness[-1][1] > best_fitness:
                 print("Generation max fitness increase, saving model...")
                 best_fitness = pop_fitness[-1][1]
+                top_model = pop_fitness[-1][0]
                 pop_fitness[-1][0].save_model()  # save top model
             # print("Population fitness: " + str(pop_fitness))
 
@@ -360,10 +371,10 @@ class EA:
             # next generation
             self.pop = new_pop
 
-            all_objects = muppy.get_objects()
-            sum1 = summary.summarize(all_objects)
-            # Prints out a summary of the large objects
-            summary.print_(sum1)
+            # all_objects = muppy.get_objects()
+            # sum1 = summary.summarize(all_objects)
+            # # Prints out a summary of the large objects
+            # summary.print_(sum1)
 
 
 
@@ -392,19 +403,23 @@ class EA:
         pass
 
     def _fitness_test(self, model):
-        state = self.env.reset()
-        terminated = False
-        episode_reward = 0
+        total = 0
         frames_count = 0
-        while not terminated:
-            action = model.predict(state)
-            state, reward, terminated, info = self.env.step(action)
-            frames_count += 1
-            # env.render()
-            episode_reward += reward
-            # sleep(0.01)
-        # print(str(episode_reward))
-        return model, episode_reward, frames_count
+
+        for i in range(FITNESS_RUNS):
+            state = self.env.reset()
+            terminated = False
+            episode_reward = 0
+            while not terminated:
+                action = model.predict(state)
+                state, reward, terminated, _ = self.env.step(action)
+                frames_count += 1
+                #self.env.render()
+                episode_reward += reward
+                #sleep(0.01)
+            # print(str(episode_reward))
+            total += episode_reward
+        return model, (total/FITNESS_RUNS), frames_count
 
 
 #test_model = SimpleNeuralNetwork((4, 128), 6)
@@ -443,7 +458,7 @@ class RolloutWorker(object):
         frames_count = 0
         while not terminated:
             action = self.model.predict(state)
-            state, reward, terminated, info = self.env.step(action)
+            state, reward, terminated, _ = self.env.step(action)
             frames_count += 1
             # self.env.render()
             episode_reward += reward
@@ -468,10 +483,10 @@ class Logger:
         with scores_file:
             writer = csv.writer(scores_file)
             writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO",
-                             "INITIALISER_WEIGHT_RANGE", "MODEL_USED"])
+                             "INITIALISER_WEIGHT_RANGE", "MODEL_USED", "FITNESS_RUNS"])
             writer.writerow(
                 [POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE, MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE,
-                 MODEL_USED])
+                 MODEL_USED, FITNESS_RUNS])
             writer.writerow(["min", "max", "av", "frames", "time"])
         ##/write header
 
