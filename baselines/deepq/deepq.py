@@ -6,6 +6,10 @@ import zipfile
 import cloudpickle
 import numpy as np
 
+import datetime
+import time
+import csv
+
 import baselines.common.tf_util as U
 from baselines.common.tf_util import load_variables, save_variables
 from baselines import logger
@@ -184,6 +188,7 @@ def learn(env,
         Wrapper over act function. Adds ability to save it and load it.
         See header of baselines/deepq/categorical.py for details on the act function.
     """
+    start_time = time.perf_counter()
     # Create all the functions necessary to train the model
 
     sess = get_session()
@@ -240,6 +245,9 @@ def learn(env,
     saved_mean_reward = None
     obs = env.reset()
     reset = True
+
+    #CREATE CUSTOM LOGGER
+    own_logger = Logger()
 
     with tempfile.TemporaryDirectory() as td:
         td = checkpoint_path or td
@@ -314,6 +322,7 @@ def learn(env,
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
                 logger.dump_tabular()
+                own_logger.log_line_csv([mean_100ep_reward, t, time.perf_counter() - start_time])
 
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
@@ -330,3 +339,28 @@ def learn(env,
             load_variables(model_file)
 
     return act
+
+os.makedirs(os.path.dirname(__file__) + "/logs/deepq", exist_ok=True)
+LOGPATH = str(
+    os.path.dirname(__file__) + "/logs/deepq/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
+class Logger:
+    def __init__(self, logpath=LOGPATH):
+        self.logpath = logpath
+        ##write header
+        if not os.path.exists(self.logpath):
+            with open(self.logpath, "w"):
+                pass
+        scores_file = open(self.logpath, "a")
+        with scores_file:
+            writer = csv.writer(scores_file)
+            writer.writerow(["av", "frames", "time"])
+        ##/write header
+
+    def log_line_csv(self, line):
+        if not os.path.exists(self.logpath):
+            with open(self.logpath, "w"):
+                pass
+        scores_file = open(self.logpath, "a")
+        with scores_file:
+            writer = csv.writer(scores_file)
+            writer.writerow(line)

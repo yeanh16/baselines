@@ -10,6 +10,9 @@ LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" 
 1025 SIMPLE SpaceInvaders-ramNoFrameskip-v4
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_03-21" + "-model.h5")
 
+695 CNN SpaceInvadersNoFrameskip-v4
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_03-21" + "-model.h5")
+
 """
 
 import gym
@@ -23,11 +26,11 @@ import matplotlib.animation as animation
 import numpy as np
 
 
-ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
-RAM = True
+ENV_NAME = "SpaceInvadersNoFrameskip-v4"
+RAM = False
 SHOW_RAM = False
-MODEL_USED = "SIMPLE"
-LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_07-39" + "-model.h5")
+MODEL_USED = "CNN"
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_20-52" + "-model.h5")
 
 
 if RAM:
@@ -81,7 +84,7 @@ else:
         action = model.predict(state)
         state, reward, terminated, _ = env.step(action)
         env.render()
-        sleep(0.001)
+        #sleep(0.001)
         total_reward += reward
 
 print("Final reward: " + str(total_reward))

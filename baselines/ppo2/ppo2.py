@@ -1,5 +1,8 @@
 import os
 import time
+import csv
+import datetime
+
 import numpy as np
 import os.path as osp
 from baselines import logger
@@ -125,6 +128,9 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
     # Start total timer
     tfirststart = time.perf_counter()
 
+    #Own logging
+    own_logger = Logger()
+
     nupdates = total_timesteps//nbatch
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0
@@ -208,6 +214,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
                 logger.logkv('loss/' + lossname, lossval)
 
             logger.dumpkvs()
+            own_logger.log_line_csv([safemean([epinfo['r'] for epinfo in epinfobuf]), update*nbatch, tnow - tfirststart])
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir() and is_mpi_root:
             checkdir = osp.join(logger.get_dir(), 'checkpoints')
             os.makedirs(checkdir, exist_ok=True)
@@ -222,3 +229,27 @@ def safemean(xs):
 
 
 
+os.makedirs(os.path.dirname(__file__) + "/logs/ppo", exist_ok=True)
+LOGPATH = str(
+    os.path.dirname(__file__) + "/logs/ppo/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
+class Logger:
+    def __init__(self, logpath=LOGPATH):
+        self.logpath = logpath
+        ##write header
+        if not os.path.exists(self.logpath):
+            with open(self.logpath, "w"):
+                pass
+        scores_file = open(self.logpath, "a")
+        with scores_file:
+            writer = csv.writer(scores_file)
+            writer.writerow(["av", "frames", "time"])
+        ##/write header
+
+    def log_line_csv(self, line):
+        if not os.path.exists(self.logpath):
+            with open(self.logpath, "w"):
+                pass
+        scores_file = open(self.logpath, "a")
+        with scores_file:
+            writer = csv.writer(scores_file)
+            writer.writerow(line)

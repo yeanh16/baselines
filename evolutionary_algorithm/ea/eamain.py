@@ -30,19 +30,19 @@ SELECTION_RATE = 0.5
 MUTATE_CHANCE = 0.1  # mutate chance per weight vector for a node in a model
 MUTATION_POWER = 0.02
 ELITE_RATIO = 0.25
-FITNESS_RUNS = 5 #number of runs to average for fitness score
+FITNESS_RUNS = 1 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
-MODEL_USED = "SIMPLE" #SIMPLE or anything else
+MODEL_USED = "CNN" #SIMPLE or anything else
 NUM_WORKERS = 8
 FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
-USE_RAM = True
+USE_RAM = False
 FRAME_SIZE = 84
 if not USE_RAM:
     INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
 else:
     INPUT_SHAPE = (FRAMES_IN_OBSERVATION, 128)
 EPSILON = 0.0  # exploration/random move rate
-ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
+ENV_NAME = "SpaceInvadersNoFrameskip-v4"
 os.makedirs(os.path.dirname(__file__) + "/models/" + ENV_NAME, exist_ok=True)
 MODEL_FILEPATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + str(
     datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')) + "-model.h5")
