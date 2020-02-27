@@ -3,7 +3,7 @@ import csv
 from keras.models import Sequential
 from keras.layers import Conv2D, Flatten, Dense
 from keras.optimizers import RMSprop, Adam, SGD
-from keras.initializers import RandomUniform
+from keras.initializers import RandomUniform, RandomNormal
 from evolutionary_algorithm.ea.gym_wrapper import MainGymWrapper, RamGymWrapper
 from pympler.tracker import SummaryTracker
 from pympler import muppy, summary, refbrowser
@@ -25,24 +25,26 @@ gc.enable()
 
 ##Make sure selection rate and elite ratio produce integers from population size
 POPULATION_SIZE = 8
-INITIALISER_WEIGHTS_RANGE = 5
+INITIALISER_WEIGHTS_RANGE = 0.1
 SELECTION_RATE = 0.5
 MUTATE_CHANCE = 0.1  # mutate chance per weight vector for a node in a model
-MUTATION_POWER = 0.02
+MUTATION_POWER = 0.1
 ELITE_RATIO = 0.25
 FITNESS_RUNS = 1 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
-MODEL_USED = "CNN" #SIMPLE or anything else
+MODEL_USED = "SIMPLE" #SIMPLE or anything else
 NUM_WORKERS = 8
 FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
-USE_RAM = False
 FRAME_SIZE = 84
+EPSILON = 0.0  # exploration/random move rate
+ENV_NAME = "Seaquest-ramNoFrameskip-v4"
+USE_RAM = False
+if "-ram" in ENV_NAME:
+    USE_RAM = True
 if not USE_RAM:
     INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
 else:
     INPUT_SHAPE = (FRAMES_IN_OBSERVATION, 128)
-EPSILON = 0.0  # exploration/random move rate
-ENV_NAME = "SpaceInvadersNoFrameskip-v4"
 os.makedirs(os.path.dirname(__file__) + "/models/" + ENV_NAME, exist_ok=True)
 MODEL_FILEPATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + str(
     datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')) + "-model.h5")
@@ -60,6 +62,9 @@ class BaseNeuralNetwork:
 
 
 class ConvolutionalNeuralNetwork():
+    """
+    CNN used in DQN and GA paper
+    """
     def __init__(self, input_shape, action_space, filepath=None):
         # BaseNeuralNetwork.__init__(self, input_shape, action_space)
         # super(BaseNeuralNetwork, self).__init__()
@@ -128,6 +133,60 @@ class ConvolutionalNeuralNetwork():
         self.model.save_weights(MODEL_FILEPATH)
         # del self.model
 
+class SimpleNeuralNetwork2():
+    def __init__(self, input_shape, action_space, filepath=None):
+        # BaseNeuralNetwork.__init__(self, input_shape, action_space)
+        # super(BaseNeuralNetwork, self).__init__()
+        self.number_of_actions = action_space
+        self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
+        self.model = Sequential()
+        self.model.add(Dense(128,
+                             activation="relu",
+                             input_shape=input_shape,
+                             kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense(128,
+                             activation="relu",
+                             kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense(128,
+                             activation="relu",
+                             kernel_initializer=self.weight_initialiser))
+        self.model.add(Dense(128,
+                             activation="relu",
+                             kernel_initializer=self.weight_initialiser))
+        self.model.add(Flatten())
+        self.model.add(Dense(action_space))
+        self.model.compile(loss="mean_squared_error",
+                           optimizer=RMSprop(lr=0.00025,
+                                             rho=0.95,
+                                             epsilon=0.01),
+                           metrics=["accuracy"])
+        if filepath:
+            print("Loading model...")
+            self.model.model.load_weights(filepath)
+        # self.model.summary() 61,190 weights
+
+    def predict(self, state):
+        # print("state: " + str(state))
+        if np.random.rand() < EPSILON:
+            print("random action taken")
+            return random.randrange(self.number_of_actions)
+        q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
+        # print("output layer: " + str(q_values))
+        # print("predict " + str(np.argmax(q_values[0])))
+        return np.argmax(q_values[0])
+
+    def set_weights(self, weights):
+        self.model.set_weights(weights)
+
+    def get_weights(self):
+        return self.model.get_weights()
+
+    def load_weights(self, filepath):
+        self.model = self.model.load_weights(filepath)
+
+    def save_model(self):
+        self.model.save_weights(MODEL_FILEPATH)
+        # del self.model
 
 class SimpleNeuralNetwork():
     def __init__(self, input_shape, action_space, filepath=None):
@@ -182,6 +241,7 @@ class SimpleNeuralNetwork():
 
     def save_model(self):
         self.model.save_weights(MODEL_FILEPATH)
+        self.model.summary()
         # del self.model
 
 
@@ -257,8 +317,10 @@ class EA:
         # workers = [RolloutWorker.remote() for _ in range(NUM_WORKERS)]
 
         best_fitness = -9999
+        best_fitness_last_counter = 0 # counter of generations since the best fitness was updated
         start_time = time.perf_counter()
         cumulative_frames = 0
+
         for g in range(0, NUMBEROFGENERATIONS):
             print("Generation " + str(g))
             if g == 0:
@@ -338,6 +400,9 @@ class EA:
                 best_fitness = pop_fitness[-1][1]
                 top_model = pop_fitness[-1][0]
                 pop_fitness[-1][0].save_model()  # save top model
+                best_fitness_last_counter = 0
+            else:
+                best_fitness_last_counter += 1
             # print("Population fitness: " + str(pop_fitness))
 
             # add elites
@@ -378,23 +443,50 @@ class EA:
 
 
 
-    def _mutation(self, model=None):
-        if model is None:
-            print("BUG!")
-            return
+    # def _mutation(self, model=None, increase_power=1):
+    #     if model is None:
+    #         print("BUG!")
+    #         return
+    #
+    #     # add random gaussian noise to every weight
+    #     # print("weights before mutation: " + str(np.array(model.get_weights)))
+    #     def mutate(w):
+    #         result = w
+    #         if np.random.uniform(0, 1) < MUTATE_CHANCE:
+    #             result = [i + np.random.normal((0, MUTATION_POWER)) for i in w]
+    #         return result
+    #
+    #     new_weights = [w + np.random.uniform(low=-MUTATION_POWER ** increase_power, high=MUTATION_POWER ** increase_power) for w in model.get_weights()]
+    #     model.set_weights(new_weights)
+    #     # print("weights after mutation " + str(np.array(model.get_weights)))
+    #     return model
 
-        # add random gaussian noise to every weight
-        # print("weights before mutation: " + str(np.array(model.get_weights)))
-        def mutate(w):
-            result = w
-            if np.random.uniform(0, 1) < MUTATE_CHANCE:
-                result = [i + np.random.normal((0, MUTATION_POWER)) for i in w]
-            return result
-
-        new_weights = [w + np.random.normal(0, MUTATION_POWER) for w in model.get_weights()]
-        model.set_weights(new_weights)
-        # print("weights after mutation " + str(np.array(model.get_weights)))
+    def _mutation(self, model):
+        weights = model.get_weights()
+        for a in range(0, len(weights)):  # 10
+            a_layer = weights[a]
+            for b in range(0, len(a_layer)):  # 8
+                b_layer = a_layer[b]
+                if not isinstance(b_layer, np.ndarray):
+                    if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                        weights[a][b] = self._random_weight()
+                    continue
+                for c in range(0, len(b_layer)):  # 8
+                    c_layer = b_layer[c]
+                    if not isinstance(c_layer, np.ndarray):
+                        if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                            weights[a][b][c] = self._random_weight()
+                        continue
+                    for d in range(0, len(c_layer)):  # 4
+                        d_layer = c_layer[d]
+                        for e in range(0, len(d_layer)):  # 32
+                            if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                                weights[a][b][c][d][e] = self._random_weight()
+        model.set_weights(weights)
         return model
+
+    def _random_weight(self, base_value=0):
+        return base_value + random.uniform(-MUTATION_POWER, MUTATION_POWER)
 
     def _selection(self):
         pass
@@ -405,9 +497,9 @@ class EA:
     def _fitness_test(self, model):
         total = 0
         frames_count = 0
+        state = self.env.reset()
 
         for i in range(FITNESS_RUNS):
-            state = self.env.reset()
             terminated = False
             episode_reward = 0
             while not terminated:
@@ -419,6 +511,7 @@ class EA:
                 #sleep(0.01)
             # print(str(episode_reward))
             total += episode_reward
+            state = self.env.reset()
         return model, (total/FITNESS_RUNS), frames_count
 
 
