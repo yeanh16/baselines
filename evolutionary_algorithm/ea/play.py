@@ -32,13 +32,13 @@ import numpy as np
 ENV_NAME = "SpaceInvadersNoFrameskip-v4"
 if "-ram" in ENV_NAME:
     RAM = True
-    SHOW_RAM = True
+    SHOW_RAM = False
 else:
     RAM = False
     SHOW_RAM = False
 
 MODEL_USED = "SIMPLE"
-LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-26_11-28" + "-model.h5")
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-26_10-09" + "-model.h5")
 
 
 if RAM:
@@ -82,7 +82,7 @@ if SHOW_RAM:
             # pyplot.colorbar(img2, cmap=cmap2)
 
 
-        ani = animation.FuncAnimation(fig, animate, interval=2)
+        ani = animation.FuncAnimation(fig, animate, interval=1)
         pyplot.show()
 
 else:

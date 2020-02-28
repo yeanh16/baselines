@@ -24,12 +24,12 @@ from time import sleep
 gc.enable()
 
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 8
+POPULATION_SIZE = 80
 INITIALISER_WEIGHTS_RANGE = 0.1
 SELECTION_RATE = 0.5
-MUTATE_CHANCE = 0.001  # mutate chance per weight in a model
-MUTATION_POWER = 0.1
-ELITE_RATIO = 0.25
+MUTATE_CHANCE = 0.5  # mutate chance per weight in a model
+MUTATION_POWER = 0.5
+ELITE_RATIO = 0.20
 FITNESS_RUNS = 1 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
 MODEL_USED = "SIMPLE" #SIMPLE or anything else
@@ -54,190 +54,69 @@ LOGPATH = str(
 USE_LOAD_WEIGHTS = False
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-13_04-09" + "-model.h5")
 
-
-class ConvolutionalNeuralNetwork():
+class BuildNeuralNetwork:
     """
-    CNN used in DQN and GA paper
+    Builds a neural network based on the chromosome
+    chromosome composition
+    [L, (N, RL, RH, S)]
+    L = Layers used
+    The following are repeated for number of layers:
+    N = Number of Nodes in layer
+    RL = Weights range, low
+    RH = Weights range, high
+    S = Seed used for weight range initialisation
     """
-    def __init__(self, input_shape, action_space, filepath=None):
-        # BaseNeuralNetwork.__init__(self, input_shape, action_space)
-        # super(BaseNeuralNetwork, self).__init__()
-        self.number_of_actions = action_space
-        self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
-        self.model = Sequential()
-        self.model.add(Conv2D(filters=32,
-                              kernel_size=8,
-                              strides=(4, 4),
-                              padding="valid",
-                              activation="relu",
-                              input_shape=input_shape,
-                              data_format="channels_first",
-                              kernel_initializer=self.weight_initialiser))
-        self.model.add(Conv2D(filters=64,
-                              kernel_size=4,
-                              strides=(2, 2),
-                              padding="valid",
-                              activation="relu",
-                              input_shape=input_shape,
-                              data_format="channels_first",
-                              kernel_initializer=self.weight_initialiser))
-        self.model.add(Conv2D(filters=64,
-                              kernel_size=3,
-                              strides=(1, 1),
-                              padding="valid",
-                              activation="relu",
-                              input_shape=input_shape,
-                              data_format="channels_first",
-                              kernel_initializer=self.weight_initialiser))
-        self.model.add(Flatten())
-        self.model.add(Dense(512,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(action_space))
-        self.model.compile(loss="mean_squared_error",
-                           optimizer=RMSprop(lr=0.00025,
-                                             rho=0.95,
-                                             epsilon=0.01),
-                           metrics=["accuracy"])
-        if filepath:
-            print("Loading model...")
-            self.model.model.load_weights(filepath)
-        # self.model.summary()
+    def __init__(self, input_shape, action_space, chromosome):
+        self.input_shape = input_shape
+        self.action_space = action_space
+        self.chromosome = chromosome
+        self.model = self._build_model()
+
+    def _build_model(self):
+        model = Sequential()
+        chromosome_index = 1
+        for l in range(self.chromosome[0]+1):
+            if chromosome_index < len(self.chromosome):
+                mn = min(self.chromosome[chromosome_index+1], self.chromosome[chromosome_index+2])
+                mx = max(self.chromosome[chromosome_index+1], self.chromosome[chromosome_index+2])
+                kernel_initializer = RandomUniform(minval=mn, maxval=mx, seed=self.chromosome[chromosome_index+3])
+            else:
+                model.add(Flatten())
+                model.add(Dense(self.action_space))
+                continue
+
+            if l == 0:
+                model.add(Dense(int(self.chromosome[chromosome_index]),
+                                input_shape=self.input_shape,
+                                kernel_initializer=kernel_initializer))
+            else:
+                model.add(Dense(int(self.chromosome[chromosome_index]),
+                                activation="relu",
+                                kernel_initializer=kernel_initializer))
+            chromosome_index += 4
+        model.compile(loss="mean_squared_error",
+                    optimizer=RMSprop(lr=0.00025,
+                    rho=0.95,
+                    epsilon=0.01),
+                    metrics=["accuracy"])
+
+        return model
 
     def predict(self, state):
-        # print("state: " + str(state))
-        if np.random.rand() < EPSILON:
-            print("random action taken")
-            return random.randrange(self.number_of_actions)
         q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
-        # print("output layer: " + str(q_values))
-        # print("predict " + str(np.argmax(q_values[0])))
         return np.argmax(q_values[0])
-
-    def set_weights(self, weights):
-        self.model.set_weights(weights)
 
     def get_weights(self):
         return self.model.get_weights()
 
-    def load_weights(self, filepath):
-        self.model = self.model.load_weights(filepath)
-
     def save_model(self):
-        self.model.save_weights(MODEL_FILEPATH)
-        # del self.model
+        self.model.save(MODEL_FILEPATH)
 
-class SimpleNeuralNetwork2():
-    def __init__(self, input_shape, action_space, filepath=None):
-        # BaseNeuralNetwork.__init__(self, input_shape, action_space)
-        # super(BaseNeuralNetwork, self).__init__()
-        self.number_of_actions = action_space
-        self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
-        self.model = Sequential()
-        self.model.add(Dense(128,
-                             activation="relu",
-                             input_shape=input_shape,
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Flatten())
-        self.model.add(Dense(action_space))
-        self.model.compile(loss="mean_squared_error",
-                           optimizer=RMSprop(lr=0.00025,
-                                             rho=0.95,
-                                             epsilon=0.01),
-                           metrics=["accuracy"])
-        if filepath:
-            print("Loading model...")
-            self.model.model.load_weights(filepath)
-        # self.model.summary() 61,190 weights
+    def load_model(self):
+        self.model = load_model(LOAD_WEIGHTS_PATH)
 
-    def predict(self, state):
-        # print("state: " + str(state))
-        if np.random.rand() < EPSILON:
-            print("random action taken")
-            return random.randrange(self.number_of_actions)
-        q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
-        # print("output layer: " + str(q_values))
-        # print("predict " + str(np.argmax(q_values[0])))
-        return np.argmax(q_values[0])
-
-    def set_weights(self, weights):
-        self.model.set_weights(weights)
-
-    def get_weights(self):
-        return self.model.get_weights()
-
-    def load_weights(self, filepath):
-        self.model = self.model.load_weights(filepath)
-
-    def save_model(self):
-        self.model.save_weights(MODEL_FILEPATH)
-        # del self.model
-
-class SimpleNeuralNetwork():
-    def __init__(self, input_shape, action_space, filepath=None):
-        # BaseNeuralNetwork.__init__(self, input_shape, action_space)
-        # super(BaseNeuralNetwork, self).__init__()
-        self.number_of_actions = action_space
-        self.weight_initialiser = RandomUniform(minval=-INITIALISER_WEIGHTS_RANGE, maxval=INITIALISER_WEIGHTS_RANGE)
-        self.model = Sequential()
-        self.model.add(Dense(128,
-                             activation="relu",
-                             input_shape=input_shape,
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Flatten())
-        self.model.add(Dense(action_space))
-        self.model.compile(loss="mean_squared_error",
-                           optimizer=RMSprop(lr=0.00025,
-                                             rho=0.95,
-                                             epsilon=0.01),
-                           metrics=["accuracy"])
-        if filepath:
-            print("Loading model...")
-            self.model.model.load_weights(filepath)
-        # self.model.summary() 61,190 weights
-
-    def predict(self, state):
-        # print("state: " + str(state))
-        if np.random.rand() < EPSILON:
-            print("random action taken")
-            return random.randrange(self.number_of_actions)
-        q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
-        # print("output layer: " + str(q_values))
-        # print("predict " + str(np.argmax(q_values[0])))
-        return np.argmax(q_values[0])
-
-    def set_weights(self, weights):
-        self.model.set_weights(weights)
-
-    def get_weights(self):
-        return self.model.get_weights()
-
-    def load_weights(self, filepath):
-        self.model = self.model.load_weights(filepath)
-
-    def save_model(self):
-        self.model.save_weights(MODEL_FILEPATH)
-        self.model.summary()
-        # del self.model
-
+    def get_model(self):
+        return self.model
 
 class EA:
     def __init__(self, env_name, pop_size, input_shape, selection_rate):
@@ -253,7 +132,7 @@ class EA:
         # for i in range(0, mp.cpu_count()):
         #    self.envs.append(MainGymWrapper.wrap(gym.make(self.env_name)))
         self.input_shape = input_shape
-        self.pop = self._intialise_pop()
+        self.pop = self._initialise_pop()
         self.selection_rate = selection_rate
         self.logger = Logger(LOGPATH)
         self.cumulative_frames = 0  # the total ammount of frames processed
@@ -266,47 +145,33 @@ class EA:
 
         return _f
 
-    def _intialise_pop(self):
-        if MODEL_USED == "SIMPLE":
-            if not USE_LOAD_WEIGHTS:
-                pop = []
-                for i in range(0, self.pop_size):
-                    pop.append(SimpleNeuralNetwork(self.input_shape, self.env.action_space.n))
-                return pop
-            else:
-                pop = []
-                model = SimpleNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
-                pop.append(model)
-                # the rest of the population will be mutations of this model
-                # mutation
-                while len(pop) < POPULATION_SIZE:
-                    new_model = copy.deepcopy(model)
-                    new_model = self._mutation(new_model)
-                    pop.append(new_model)
-                return pop
-        else:
-            if not USE_LOAD_WEIGHTS:
-                pop = []
-                for i in range(0, self.pop_size):
-                    pop.append(ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n))
-                return pop
-            else:
-                pop = []
-                model = ConvolutionalNeuralNetwork(self.input_shape, self.env.action_space.n, LOAD_WEIGHTS_PATH)
-                pop.append(model)
-                # the rest of the population will be mutations of this model
-                # mutation
-                while len(pop) < POPULATION_SIZE:
-                    new_model = copy.deepcopy(model)
-                    new_model = self._mutation(new_model)
-                    pop.append(new_model)
-                return pop
+    def _initialise_pop(self):
+        pop = []
+        for j in range(self.pop_size):
+            chromosome = []
+            num_layers = np.random.randint(low=1, high=8)
+            chromosome.append(num_layers)
+            for i in range(num_layers):
+                chromosome.append(np.random.randint(low=10, high=512))
+                chromosome.append(np.random.uniform(low=-1, high=1))
+                chromosome.append(np.random.uniform(low=-1, high=1))
+                chromosome.append(np.random.randint(low=0, high=2147483647))
+            pop.append(chromosome)
+        return pop
+
+    def new_seeds(self, chromosome):
+        chromosome_index = 1
+        while chromosome_index < len(chromosome):
+            chromosome_index += 3
+            chromosome[chromosome] = np.random.randint(low=0, high=2147483647)
+        return chromosome
+
 
     def train_evolutionary_algorithm(self):
 
 
-        # ray.init(num_gpus=1,
-        #          memory=3200 * 1024 * 1024,
+        # ray.init(
+        #          memory=4000 * 1024 * 1024,
         #          object_store_memory=2000 * 1024 * 1024)
         # workers = [RolloutWorker.remote() for _ in range(NUM_WORKERS)]
 
@@ -324,7 +189,6 @@ class EA:
             gen_cumulative_fitness = 0
             min_gen_fitness = 9999
             max_gen_fitness = -9999
-            # model = ConvolutionalNeuralNetwork(INPUT_SHAPE, env.action_space.n)
             count = 0
 
             for model in self.pop:
@@ -355,7 +219,7 @@ class EA:
             # while model_counter < POPULATION_SIZE:
             #     for worker_num in range(NUM_WORKERS):
             #         if (model_counter < POPULATION_SIZE):
-            #             model = self.pop[model_counter]
+            #             model = BuildNeuralNetwork(input_shape=INPUT_SHAPE, action_space=self.env.action_space.n ,chromosome=self.pop[model_counter])
             #             model_counter += 1
             #             model_id = ray.put(model, weakref=True)
             #             worker = workers[worker_num]
@@ -393,7 +257,8 @@ class EA:
                 print("Generation max fitness increase, saving model...")
                 best_fitness = pop_fitness[-1][1]
                 top_model = pop_fitness[-1][0]
-                pop_fitness[-1][0].save_model()  # save top model
+                #pop_fitness[-1][0].save_model()  # save top model
+                print("Top chromosome: " + str(top_model))
                 best_fitness_last_counter = 0
             else:
                 best_fitness_last_counter += 1
@@ -415,13 +280,13 @@ class EA:
             # mutation & selection
             while len(new_pop) < POPULATION_SIZE:
                 parent1 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
-                parent2 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
+                #parent2 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
                 #new_model = copy.deepcopy(selected[np.random.randint(0, int(POPULATION_SIZE*SELECTION_RATE))][0])
-                self._crossover(parent1, parent2)
+                #self._crossover(parent1, parent2)
                 self._mutation(parent1)
-                self._mutation(parent2)
+                #self._mutation(parent2)
                 new_pop.append(parent1)
-                new_pop.append(parent2)
+                #new_pop.append(parent2)
 
             # object_ids = []
             # def _new_model():
@@ -460,36 +325,31 @@ class EA:
     #     # print("weights after mutation " + str(np.array(model.get_weights)))
     #     return model
 
-    def _mutation(self, model):
-        weights = model.get_weights()
-        for a in range(0, len(weights)):  # 10
-            a_layer = weights[a]
-            for b in range(0, len(a_layer)):  # 8
-                b_layer = a_layer[b]
-                if not isinstance(b_layer, np.ndarray):
-                    if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
-                        weights[a][b] = self._random_weight()
-                    continue
-                for c in range(0, len(b_layer)):  # 8
-                    c_layer = b_layer[c]
-                    if not isinstance(c_layer, np.ndarray):
-                        if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
-                            weights[a][b][c] = self._random_weight()
-                        continue
-                    for d in range(0, len(c_layer)):  # 4
-                        d_layer = c_layer[d]
-                        for e in range(0, len(d_layer)):  # 32
-                            if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
-                                weights[a][b][c][d][e] = self._random_weight()
-        model.set_weights(weights)
-        return model
+    def _mutation(self, chromosome):
+        """
+        mutate number of nodes per layer and ranges only
+        """
+        chromosome_index = 1
+        while chromosome_index < len(chromosome):
+            # mutate number of nodes
+            if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                chromosome[chromosome_index] = max(1, chromosome[chromosome_index] + np.round(np.random.normal(0, chromosome[chromosome_index]*MUTATION_POWER)))
+            # mutate ranges
+            chromosome_index += 1
+            if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                chromosome[chromosome_index] = chromosome[chromosome_index] + np.random.normal(0, MUTATION_POWER)
+            chromosome_index += 1
+            if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                chromosome[chromosome_index] = chromosome[chromosome_index] + np.random.normal(0, MUTATION_POWER)
+            chromosome_index += 2
+        return chromosome
 
     def _random_weight(self, base_value=0):
         return base_value + random.uniform(-MUTATION_POWER, MUTATION_POWER)
 
     def _selection(self, population_fitness, type="tournament"):
         """
-        takes a list of (model, fitness) and returns model
+        takes a list of (chromosome, fitness) and returns model
         """
         if type == "tournament":
             x = population_fitness[np.random.randint(0, len(population_fitness))]
@@ -500,44 +360,14 @@ class EA:
                 return y[0]
         pass
 
-    def _crossover(self, model_1, model_2):
-        x = model_1.get_weights()
-        y = model_2.get_weights()
-        offspring_x = model_1.get_weights()
-        offspring_y = model_2.get_weights()
+    def _crossover(self, chromosome_1, chromosome_2):
+        pass
 
-        for a in range(0, len(offspring_x)):  # 10
-            a_layer = offspring_x[a]
-            for b in range(0, len(a_layer)):  # 8
-                b_layer = a_layer[b]
-                if not isinstance(b_layer, np.ndarray):
-                    if random.choice([True, False]):
-                        offspring_x[a][b] = y[a][b]
-                        offspring_y[a][b] = x[a][b]
-                    continue
-                for c in range(0, len(b_layer)):  # 8
-                    c_layer = b_layer[c]
-                    if not isinstance(c_layer, np.ndarray):
-                        if random.choice([True, False]):
-                            offspring_x[a][b][c] = y[a][b][c]
-                            offspring_y[a][b][c] = x[a][b][c]
-                        continue
-                    for d in range(0, len(c_layer)):  # 4
-                        d_layer = c_layer[d]
-                        for e in range(0, len(d_layer)):  # 32
-                            if random.choice([True, False]):
-                                offspring_x[a][b][c][d][e] = y[a][b][c][d][e]
-                                offspring_y[a][b][c][d][e] = x[a][b][c][d][e]
-
-        child_1 = model_1.set_weights(offspring_x)
-        child_2 = model_2.set_weights(offspring_y)
-        return child_1, child_2
-
-    def _fitness_test(self, model):
+    def _fitness_test(self, chromosome):
         total = 0
         frames_count = 0
         state = self.env.reset()
-
+        model = BuildNeuralNetwork(self.input_shape, self.env.action_space.n, chromosome)
         for i in range(FITNESS_RUNS):
             terminated = False
             episode_reward = 0
@@ -556,7 +386,7 @@ class EA:
 
 #test_model = SimpleNeuralNetwork((4, 128), 6)
 
-@ray.remote(memory = (300 * 1024 * 1024), object_store_memory=(100*1024*1024))
+@ray.remote(memory = (500 * 1024 * 1024), object_store_memory=(100*1024*1024))
 class RolloutWorker(object):
     def __init__(self):
         # Tell numpy to only use one core. If we don't do this, each actor may
@@ -600,7 +430,7 @@ class RolloutWorker(object):
 
     def set_model(self, model):
         #del self.model
-        self.model = model
+        self.model =model
         #pass
 
 
@@ -633,19 +463,19 @@ class Logger:
 
 
 def __main__():
-    pass
-    #if __name__ == "__main__":
-    #    run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
-    #   run.train_evolutionary_algorithm()
+    #pass
+    if __name__ == "__main__":
+        run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
+        run.train_evolutionary_algorithm()
 
 
 __main__()
 
-chromosome = [2, 2, 0, 1, 1, 2, 0, 1, 1]
-action_space = 6
-input_shape = (4, 4)
+#chromosome = [2, 2, 0, 1, 1, 2, 0, 1, 1]
+#action_space = 6
+#input_shape = (4, 4)
 
-a = BuildNeuralNetwork(input_shape, action_space, chromosome)
+#a = BuildNeuralNetwork(input_shape, action_space, chromosome)
 
 # test_model = Sequential()
 # test_model.add(Dense(2, activation='relu', use_bias=False, kernel_initializer='ones', input_shape=(4,4,3,)))
