@@ -24,13 +24,13 @@ from time import sleep
 gc.enable()
 
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 80
+POPULATION_SIZE = 20
 INITIALISER_WEIGHTS_RANGE = 0.1
 SELECTION_RATE = 0.5
-MUTATE_CHANCE = 0.5  # mutate chance per weight in a model
-MUTATION_POWER = 0.5
+MUTATE_CHANCE = 0.25 # mutate chance per weight in a model
+MUTATION_POWER = 0.1
 ELITE_RATIO = 0.20
-FITNESS_RUNS = 1 #number of runs to average for fitness score
+FITNESS_RUNS = 5 #number of runs to find best fitness score for a chromosome
 NUMBEROFGENERATIONS = 5000
 MODEL_USED = "SIMPLE" #SIMPLE or anything else
 NUM_WORKERS = 8
@@ -149,10 +149,10 @@ class EA:
         pop = []
         for j in range(self.pop_size):
             chromosome = []
-            num_layers = np.random.randint(low=1, high=8)
+            num_layers = np.random.randint(low=2, high=6)
             chromosome.append(num_layers)
             for i in range(num_layers):
-                chromosome.append(np.random.randint(low=10, high=512))
+                chromosome.append(np.random.randint(low=127, high=128))
                 chromosome.append(np.random.uniform(low=-1, high=1))
                 chromosome.append(np.random.uniform(low=-1, high=1))
                 chromosome.append(np.random.randint(low=0, high=2147483647))
@@ -160,16 +160,14 @@ class EA:
         return pop
 
     def new_seeds(self, chromosome):
-        chromosome_index = 1
-        while chromosome_index < len(chromosome):
-            chromosome_index += 3
-            chromosome[chromosome] = np.random.randint(low=0, high=2147483647)
+        chromosome_index = 0
+        while chromosome_index+4 <= len(chromosome):
+            chromosome_index += 4
+            chromosome[chromosome_index] = np.random.randint(low=0, high=2147483647)
         return chromosome
 
 
     def train_evolutionary_algorithm(self):
-
-
         # ray.init(
         #          memory=4000 * 1024 * 1024,
         #          object_store_memory=2000 * 1024 * 1024)
@@ -194,15 +192,15 @@ class EA:
             for model in self.pop:
                 count += 1
                 if count > POPULATION_SIZE*ELITE_RATIO or g == 0:
-                    _, episode_reward, frames = self._fitness_test(model)
+                    chromosome, episode_reward, frames = self._fitness_test(model)
                     cumulative_frames += frames
-                    print("Chromosome " + str(count) + " reward: " + str(episode_reward))
+                    print("Chromosome " + str(chromosome) + "\nreward: " + str(episode_reward))
                     if episode_reward < min_gen_fitness:
                         min_gen_fitness = episode_reward
                     if episode_reward > max_gen_fitness:
                         max_gen_fitness = episode_reward
                     gen_cumulative_fitness += episode_reward
-                    pop_fitness.append((model, episode_reward))
+                    pop_fitness.append((chromosome, episode_reward))
                 else:
                     episode_reward = pop_fitness[count-1][1]
                     if episode_reward < min_gen_fitness:
@@ -210,7 +208,7 @@ class EA:
                     if episode_reward > max_gen_fitness:
                         max_gen_fitness = episode_reward
                     gen_cumulative_fitness += episode_reward
-                    print("Chromosome " + str(count) + " reward: " + str(pop_fitness[count-1][1]))
+                    print("Chromosome " + str(chromosome) + "\nreward: " + str(pop_fitness[count-1][1]))
 
             # # set up a worker for each model
             # model_counter = 0
@@ -327,13 +325,13 @@ class EA:
 
     def _mutation(self, chromosome):
         """
-        mutate number of nodes per layer and ranges only
+        mutate ranges only
         """
         chromosome_index = 1
         while chromosome_index < len(chromosome):
             # mutate number of nodes
-            if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
-                chromosome[chromosome_index] = max(1, chromosome[chromosome_index] + np.round(np.random.normal(0, chromosome[chromosome_index]*MUTATION_POWER)))
+            #if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+            #    chromosome[chromosome_index] = max(1, chromosome[chromosome_index] + np.round(np.random.normal(0, chromosome[chromosome_index]*MUTATION_POWER)))
             # mutate ranges
             chromosome_index += 1
             if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
@@ -366,9 +364,13 @@ class EA:
     def _fitness_test(self, chromosome):
         total = 0
         frames_count = 0
+        max_score = 0
+        best_chromosome = chromosome
         state = self.env.reset()
-        model = BuildNeuralNetwork(self.input_shape, self.env.action_space.n, chromosome)
         for i in range(FITNESS_RUNS):
+            if i is not 0:
+                chromosome = self.new_seeds(chromosome)
+            model = BuildNeuralNetwork(self.input_shape, self.env.action_space.n, chromosome)
             terminated = False
             episode_reward = 0
             while not terminated:
@@ -379,9 +381,12 @@ class EA:
                 episode_reward += reward
                 #sleep(0.01)
             # print(str(episode_reward))
-            total += episode_reward
+            if episode_reward > max_score:
+                max_score = episode_reward
+                best_chromosome = chromosome
             state = self.env.reset()
-        return model, (total/FITNESS_RUNS), frames_count
+
+        return best_chromosome, max_score, frames_count
 
 
 #test_model = SimpleNeuralNetwork((4, 128), 6)

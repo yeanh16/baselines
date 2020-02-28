@@ -125,6 +125,7 @@ class ConvolutionalNeuralNetwork():
 
     def save_model(self):
         self.model.save_weights(MODEL_FILEPATH)
+        self.model.summary()
         # del self.model
 
 class SimpleNeuralNetwork2():
@@ -441,51 +442,36 @@ class EA:
             # summary.print_(sum1)
 
 
-
-    # def _mutation(self, model=None, increase_power=1):
-    #     if model is None:
-    #         print("BUG!")
-    #         return
-    #
-    #     # add random gaussian noise to every weight
-    #     # print("weights before mutation: " + str(np.array(model.get_weights)))
-    #     def mutate(w):
-    #         result = w
-    #         if np.random.uniform(0, 1) < MUTATE_CHANCE:
-    #             result = [i + np.random.normal((0, MUTATION_POWER)) for i in w]
-    #         return result
-    #
-    #     new_weights = [w + np.random.uniform(low=-MUTATION_POWER ** increase_power, high=MUTATION_POWER ** increase_power) for w in model.get_weights()]
-    #     model.set_weights(new_weights)
-    #     # print("weights after mutation " + str(np.array(model.get_weights)))
-    #     return model
-
-    def _mutation(self, model):
-        weights = model.get_weights()
-        for a in range(0, len(weights)):  # 10
-            a_layer = weights[a]
-            for b in range(0, len(a_layer)):  # 8
-                b_layer = a_layer[b]
-                if not isinstance(b_layer, np.ndarray):
-                    if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
-                        weights[a][b] = self._random_weight()
-                    continue
-                for c in range(0, len(b_layer)):  # 8
-                    c_layer = b_layer[c]
-                    if not isinstance(c_layer, np.ndarray):
+    def _mutation(self, model, method="per_weight"):
+        if method=="per_weight":
+            weights = model.get_weights()
+            for a in range(0, len(weights)):  # 10
+                a_layer = weights[a]
+                for b in range(0, len(a_layer)):  # 8
+                    b_layer = a_layer[b]
+                    if not isinstance(b_layer, np.ndarray):
                         if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
-                            weights[a][b][c] = self._random_weight()
+                            weights[a][b] = self._random_weight(weights[a][b])
                         continue
-                    for d in range(0, len(c_layer)):  # 4
-                        d_layer = c_layer[d]
-                        for e in range(0, len(d_layer)):  # 32
+                    for c in range(0, len(b_layer)):  # 8
+                        c_layer = b_layer[c]
+                        if not isinstance(c_layer, np.ndarray):
                             if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
-                                weights[a][b][c][d][e] = self._random_weight()
-        model.set_weights(weights)
+                                weights[a][b][c] = self._random_weight(weights[a][b][c])
+                            continue
+                        for d in range(0, len(c_layer)):  # 4
+                            d_layer = c_layer[d]
+                            for e in range(0, len(d_layer)):  # 32
+                                if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                                    weights[a][b][c][d][e] = self._random_weight(weights[a][b][c][d][e])
+            model.set_weights(weights)
+        else:
+            new_weights = [w + np.random.uniform(low=-MUTATION_POWER, high=MUTATION_POWER) for w in model.get_weights()]
+            model.set_weights(new_weights)
         return model
 
     def _random_weight(self, base_value=0):
-        return base_value + random.uniform(-MUTATION_POWER, MUTATION_POWER)
+        return base_value + random.normal(0, MUTATION_POWER)
 
     def _selection(self, population_fitness, type="tournament"):
         """
