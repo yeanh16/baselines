@@ -20,21 +20,20 @@ import gym
 
 from time import sleep
 
-
 gc.enable()
 
 ##Make sure selection rate and elite ratio produce integers from population size
 POPULATION_SIZE = 20
 INITIALISER_WEIGHTS_RANGE = 0.1
 SELECTION_RATE = 0.5
-MUTATE_CHANCE = 0.25 # mutate chance per weight in a model
+MUTATE_CHANCE = 0.25  # mutate chance per weight in a model
 MUTATION_POWER = 0.1
 ELITE_RATIO = 0.20
-FITNESS_RUNS = 5 #number of runs to find best fitness score for a chromosome
+FITNESS_RUNS = 5  # number of runs to find best fitness score for a chromosome
 NUMBEROFGENERATIONS = 5000
-MODEL_USED = "SIMPLE" #SIMPLE or anything else
+MODEL_USED = "CNN"  # SIMPLE or CNN
 NUM_WORKERS = 8
-FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
+FRAMES_IN_OBSERVATION = 4  # if changed, need to also change this value in the gym_wrapper.py file
 FRAME_SIZE = 84
 EPSILON = 0.0  # exploration/random move rate
 ENV_NAME = "SpaceInvadersNoFrameskip-v4"
@@ -54,10 +53,11 @@ LOGPATH = str(
 USE_LOAD_WEIGHTS = False
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-13_04-09" + "-model.h5")
 
+
 class BuildNeuralNetwork:
     """
     Builds a neural network based on the chromosome
-    chromosome composition
+    chromosome composition for SIMPLE networks:
     [L, (N, RL, RH, S)]
     L = Layers used
     The following are repeated for number of layers:
@@ -65,21 +65,28 @@ class BuildNeuralNetwork:
     RL = Weights range, low
     RH = Weights range, high
     S = Seed used for weight range initialisation
+
+    chromosome composition for CNN networks:
+    L == 4
     """
-    def __init__(self, input_shape, action_space, chromosome):
+
+    def __init__(self, input_shape, action_space, chromosome, model_type=MODEL_USED):
         self.input_shape = input_shape
         self.action_space = action_space
         self.chromosome = chromosome
-        self.model = self._build_model()
+        if model_type == "SIMPLE":
+            self.model = self._build_model()
+        elif model_type == "CNN":
+            self.model = self._build_model_CNN()
 
     def _build_model(self):
         model = Sequential()
         chromosome_index = 1
-        for l in range(self.chromosome[0]+1):
+        for l in range(self.chromosome[0] + 1):
             if chromosome_index < len(self.chromosome):
-                mn = min(self.chromosome[chromosome_index+1], self.chromosome[chromosome_index+2])
-                mx = max(self.chromosome[chromosome_index+1], self.chromosome[chromosome_index+2])
-                kernel_initializer = RandomUniform(minval=mn, maxval=mx, seed=self.chromosome[chromosome_index+3])
+                mn = min(self.chromosome[chromosome_index + 1], self.chromosome[chromosome_index + 2])
+                mx = max(self.chromosome[chromosome_index + 1], self.chromosome[chromosome_index + 2])
+                kernel_initializer = RandomUniform(minval=mn, maxval=mx, seed=self.chromosome[chromosome_index + 3])
             else:
                 model.add(Flatten())
                 model.add(Dense(self.action_space))
@@ -95,10 +102,62 @@ class BuildNeuralNetwork:
                                 kernel_initializer=kernel_initializer))
             chromosome_index += 4
         model.compile(loss="mean_squared_error",
-                    optimizer=RMSprop(lr=0.00025,
-                    rho=0.95,
-                    epsilon=0.01),
-                    metrics=["accuracy"])
+                      optimizer=RMSprop(lr=0.00025,
+                                        rho=0.95,
+                                        epsilon=0.01),
+                      metrics=["accuracy"])
+
+        return model
+
+    def _build_model_CNN(self):
+        model = Sequential()
+        chromosome_index = 1
+        for l in range(self.chromosome[0]):
+            if chromosome_index < len(self.chromosome):
+                mn = min(self.chromosome[chromosome_index + 1], self.chromosome[chromosome_index + 2])
+                mx = max(self.chromosome[chromosome_index + 1], self.chromosome[chromosome_index + 2])
+                kernel_initializer = RandomUniform(minval=mn, maxval=mx, seed=self.chromosome[chromosome_index + 3])
+
+            if l == 0:
+                model.add(Conv2D(filters=32,
+                                 kernel_size=8,
+                                 strides=(4, 4),
+                                 padding="valid",
+                                 activation="relu",
+                                 input_shape=self.input_shape,
+                                 data_format="channels_first",
+                                 kernel_initializer=kernel_initializer))
+            elif l == 1:
+                model.add(Conv2D(filters=64,
+                                 kernel_size=4,
+                                 strides=(2, 2),
+                                 padding="valid",
+                                 activation="relu",
+                                 input_shape=self.input_shape,
+                                 data_format="channels_first",
+                                 kernel_initializer=kernel_initializer))
+            elif l == 2:
+                model.add(Conv2D(filters=64,
+                                 kernel_size=3,
+                                 strides=(1, 1),
+                                 padding="valid",
+                                 activation="relu",
+                                 input_shape=self.input_shape,
+                                 data_format="channels_first",
+                                 kernel_initializer=kernel_initializer))
+            elif l == 3:
+                model.add(Flatten())
+                model.add(Dense(512,
+                                activation="relu",
+                                kernel_initializer=kernel_initializer))
+                model.add(Dense(self.action_space))
+
+            chromosome_index += 4
+        model.compile(loss="mean_squared_error",
+                      optimizer=RMSprop(lr=0.00025,
+                                        rho=0.95,
+                                        epsilon=0.01),
+                      metrics=["accuracy"])
 
         return model
 
@@ -117,6 +176,7 @@ class BuildNeuralNetwork:
 
     def get_model(self):
         return self.model
+
 
 class EA:
     def __init__(self, env_name, pop_size, input_shape, selection_rate):
@@ -149,7 +209,10 @@ class EA:
         pop = []
         for j in range(self.pop_size):
             chromosome = []
-            num_layers = np.random.randint(low=2, high=6)
+            if MODEL_USED == "SIMPLE":
+                num_layers = np.random.randint(low=2, high=6)
+            elif MODEL_USED == "CNN":
+                num_layers = 4
             chromosome.append(num_layers)
             for i in range(num_layers):
                 chromosome.append(np.random.randint(low=127, high=128))
@@ -161,11 +224,10 @@ class EA:
 
     def new_seeds(self, chromosome):
         chromosome_index = 0
-        while chromosome_index+4 <= len(chromosome):
+        while chromosome_index + 4 <= len(chromosome):
             chromosome_index += 4
             chromosome[chromosome_index] = np.random.randint(low=0, high=2147483647)
         return chromosome
-
 
     def train_evolutionary_algorithm(self):
         # ray.init(
@@ -174,7 +236,7 @@ class EA:
         # workers = [RolloutWorker.remote() for _ in range(NUM_WORKERS)]
 
         best_fitness = -9999
-        best_fitness_last_counter = 0 # counter of generations since the best fitness was updated
+        best_fitness_last_counter = 0  # counter of generations since the best fitness was updated
         start_time = time.perf_counter()
         cumulative_frames = 0
 
@@ -183,7 +245,7 @@ class EA:
             if g == 0:
                 pop_fitness = []
             else:
-                pop_fitness = pop_fitness[int(-POPULATION_SIZE*ELITE_RATIO):]
+                pop_fitness = pop_fitness[int(-POPULATION_SIZE * ELITE_RATIO):]
             gen_cumulative_fitness = 0
             min_gen_fitness = 9999
             max_gen_fitness = -9999
@@ -191,7 +253,7 @@ class EA:
 
             for model in self.pop:
                 count += 1
-                if count > POPULATION_SIZE*ELITE_RATIO or g == 0:
+                if count > POPULATION_SIZE * ELITE_RATIO or g == 0:
                     chromosome, episode_reward, frames = self._fitness_test(model)
                     cumulative_frames += frames
                     print("Chromosome " + str(chromosome) + "\nreward: " + str(episode_reward))
@@ -202,13 +264,13 @@ class EA:
                     gen_cumulative_fitness += episode_reward
                     pop_fitness.append((chromosome, episode_reward))
                 else:
-                    episode_reward = pop_fitness[count-1][1]
+                    episode_reward = pop_fitness[count - 1][1]
                     if episode_reward < min_gen_fitness:
                         min_gen_fitness = episode_reward
                     if episode_reward > max_gen_fitness:
                         max_gen_fitness = episode_reward
                     gen_cumulative_fitness += episode_reward
-                    print("Chromosome " + str(chromosome) + "\nreward: " + str(pop_fitness[count-1][1]))
+                    print("Chromosome " + str(chromosome) + "\nreward: " + str(pop_fitness[count - 1][1]))
 
             # # set up a worker for each model
             # model_counter = 0
@@ -255,7 +317,7 @@ class EA:
                 print("Generation max fitness increase, saving model...")
                 best_fitness = pop_fitness[-1][1]
                 top_model = pop_fitness[-1][0]
-                #pop_fitness[-1][0].save_model()  # save top model
+                # pop_fitness[-1][0].save_model()  # save top model
                 print("Top chromosome: " + str(top_model))
                 best_fitness_last_counter = 0
             else:
@@ -264,10 +326,10 @@ class EA:
 
             # add elites
             new_pop = []
-            #selected = []
+            # selected = []
             number_of_elites = int(POPULATION_SIZE * ELITE_RATIO)
             for i in range(POPULATION_SIZE - number_of_elites, POPULATION_SIZE):
-                #selected.append(pop_fitness[i])
+                # selected.append(pop_fitness[i])
                 new_pop.append(pop_fitness[i][0])
 
             # # selection, fill up rest of selection list
@@ -278,13 +340,13 @@ class EA:
             # mutation & selection
             while len(new_pop) < POPULATION_SIZE:
                 parent1 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
-                #parent2 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
-                #new_model = copy.deepcopy(selected[np.random.randint(0, int(POPULATION_SIZE*SELECTION_RATE))][0])
-                #self._crossover(parent1, parent2)
+                # parent2 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
+                # new_model = copy.deepcopy(selected[np.random.randint(0, int(POPULATION_SIZE*SELECTION_RATE))][0])
+                # self._crossover(parent1, parent2)
                 self._mutation(parent1)
-                #self._mutation(parent2)
+                # self._mutation(parent2)
                 new_pop.append(parent1)
-                #new_pop.append(parent2)
+                # new_pop.append(parent2)
 
             # object_ids = []
             # def _new_model():
@@ -303,26 +365,6 @@ class EA:
             # # Prints out a summary of the large objects
             # summary.print_(sum1)
 
-
-
-    # def _mutation(self, model=None, increase_power=1):
-    #     if model is None:
-    #         print("BUG!")
-    #         return
-    #
-    #     # add random gaussian noise to every weight
-    #     # print("weights before mutation: " + str(np.array(model.get_weights)))
-    #     def mutate(w):
-    #         result = w
-    #         if np.random.uniform(0, 1) < MUTATE_CHANCE:
-    #             result = [i + np.random.normal((0, MUTATION_POWER)) for i in w]
-    #         return result
-    #
-    #     new_weights = [w + np.random.uniform(low=-MUTATION_POWER ** increase_power, high=MUTATION_POWER ** increase_power) for w in model.get_weights()]
-    #     model.set_weights(new_weights)
-    #     # print("weights after mutation " + str(np.array(model.get_weights)))
-    #     return model
-
     def _mutation(self, chromosome):
         """
         mutate ranges only
@@ -330,7 +372,7 @@ class EA:
         chromosome_index = 1
         while chromosome_index < len(chromosome):
             # mutate number of nodes
-            #if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+            # if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
             #    chromosome[chromosome_index] = max(1, chromosome[chromosome_index] + np.round(np.random.normal(0, chromosome[chromosome_index]*MUTATION_POWER)))
             # mutate ranges
             chromosome_index += 1
@@ -377,9 +419,9 @@ class EA:
                 action = model.predict(state)
                 state, reward, terminated, _ = self.env.step(action)
                 frames_count += 1
-                #self.env.render()
+                # self.env.render()
                 episode_reward += reward
-                #sleep(0.01)
+                # sleep(0.01)
             # print(str(episode_reward))
             if episode_reward > max_score:
                 max_score = episode_reward
@@ -389,9 +431,9 @@ class EA:
         return best_chromosome, max_score, frames_count
 
 
-#test_model = SimpleNeuralNetwork((4, 128), 6)
+# test_model = SimpleNeuralNetwork((4, 128), 6)
 
-@ray.remote(memory = (500 * 1024 * 1024), object_store_memory=(100*1024*1024))
+@ray.remote(memory=(500 * 1024 * 1024), object_store_memory=(100 * 1024 * 1024))
 class RolloutWorker(object):
     def __init__(self):
         # Tell numpy to only use one core. If we don't do this, each actor may
@@ -434,9 +476,9 @@ class RolloutWorker(object):
         return self.model, episode_reward, frames_count
 
     def set_model(self, model):
-        #del self.model
-        self.model =model
-        #pass
+        # del self.model
+        self.model = model
+        # pass
 
 
 class Logger:
@@ -468,7 +510,7 @@ class Logger:
 
 
 def __main__():
-    #pass
+    # pass
     if __name__ == "__main__":
         run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
         run.train_evolutionary_algorithm()
@@ -476,11 +518,11 @@ def __main__():
 
 __main__()
 
-#chromosome = [2, 2, 0, 1, 1, 2, 0, 1, 1]
-#action_space = 6
-#input_shape = (4, 4)
+# chromosome = [2, 2, 0, 1, 1, 2, 0, 1, 1]
+# action_space = 6
+# input_shape = (4, 4)
 
-#a = BuildNeuralNetwork(input_shape, action_space, chromosome)
+# a = BuildNeuralNetwork(input_shape, action_space, chromosome)
 
 # test_model = Sequential()
 # test_model.add(Dense(2, activation='relu', use_bias=False, kernel_initializer='ones', input_shape=(4,4,3,)))

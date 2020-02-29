@@ -32,7 +32,7 @@ MUTATION_POWER = 0.1
 ELITE_RATIO = 0.25
 FITNESS_RUNS = 1 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
-MODEL_USED = "SIMPLE" #SIMPLE or anything else
+MODEL_USED = "CNN" #SIMPLE or anything else
 NUM_WORKERS = 8
 FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
 FRAME_SIZE = 84
@@ -471,7 +471,7 @@ class EA:
         return model
 
     def _random_weight(self, base_value=0):
-        return base_value + random.normal(0, MUTATION_POWER)
+        return base_value + np.random.normal(0, MUTATION_POWER)
 
     def _selection(self, population_fitness, type="tournament"):
         """
@@ -619,19 +619,19 @@ class Logger:
 
 
 def __main__():
-    pass
-    #if __name__ == "__main__":
-    #    run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
-    #   run.train_evolutionary_algorithm()
+    #pass
+    if __name__ == "__main__":
+        run = EA(ENV_NAME, POPULATION_SIZE, INPUT_SHAPE, SELECTION_RATE)
+        run.train_evolutionary_algorithm()
 
 
 __main__()
 
-chromosome = [2, 2, 0, 1, 1, 2, 0, 1, 1]
-action_space = 6
-input_shape = (4, 4)
-
-a = BuildNeuralNetwork(input_shape, action_space, chromosome)
+# chromosome = [2, 2, 0, 1, 1, 2, 0, 1, 1]
+# action_space = 6
+# input_shape = (4, 4)
+#
+# a = BuildNeuralNetwork(input_shape, action_space, chromosome)
 
 # test_model = Sequential()
 # test_model.add(Dense(2, activation='relu', use_bias=False, kernel_initializer='ones', input_shape=(4,4,3,)))
