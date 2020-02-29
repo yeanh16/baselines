@@ -32,12 +32,12 @@ MUTATION_POWER = 0.1
 ELITE_RATIO = 0.25
 FITNESS_RUNS = 1 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
-MODEL_USED = "CNN" #SIMPLE or anything else
+MODEL_USED = "SIMPLE" #SIMPLE or anything else
 NUM_WORKERS = 8
 FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
 FRAME_SIZE = 84
 EPSILON = 0.0  # exploration/random move rate
-ENV_NAME = "SpaceInvadersNoFrameskip-v4"
+ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
 USE_RAM = False
 if "-ram" in ENV_NAME:
     USE_RAM = True
@@ -52,7 +52,7 @@ os.makedirs(os.path.dirname(__file__) + "/logs/" + ENV_NAME, exist_ok=True)
 LOGPATH = str(
     os.path.dirname(__file__) + "/logs/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
 USE_LOAD_WEIGHTS = False
-LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-13_04-09" + "-model.h5")
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_16-29" + "-model.h5")
 
 
 class ConvolutionalNeuralNetwork():
@@ -194,13 +194,10 @@ class SimpleNeuralNetwork():
                              activation="relu",
                              input_shape=input_shape,
                              kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
+        self.model.add(Dense(64,
                              activation="relu",
                              kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
-                             activation="relu",
-                             kernel_initializer=self.weight_initialiser))
-        self.model.add(Dense(128,
+        self.model.add(Dense(32,
                              activation="relu",
                              kernel_initializer=self.weight_initialiser))
         self.model.add(Flatten())

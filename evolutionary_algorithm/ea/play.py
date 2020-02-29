@@ -3,18 +3,30 @@ Notable models
 830 SIMPLE: SpaceInvaders-ramNoFrameskip-v4 (in one generation!)
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-23_04-44" + "-model.h5")
 
-
 720 SIMPLE SpaceInvaders-ramNoFrameskip-v4
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-20_04-35" + "-model.h5")
 
 1025 SIMPLE SpaceInvaders-ramNoFrameskip-v4
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_03-21" + "-model.h5")
 
+820 (/5) SIMPLE (128, 64, 32) SpaceInvaders-ramNoFrameskip-v4 - SEEMS TO BE STABLE WITH THIS ARCHITECTURE!!!!
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_16-29" + "-model.h5")
+
+800 as above (used in log 50 popultion)
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_17-19" + "-model.h5")
+
+
 695 CNN SpaceInvadersNoFrameskip-v4
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_03-21" + "-model.h5")
 
+925 CNN SpaceInvadersNoFrameskip-v4
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_10-40" + "-model.h5")
+
+
 875 SIMPLE(512, 255, 128, 128) SpaceInvadersNoFrameskip-v4 stable model no ram
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-26_10-09" + "-model.h5")
+
+
 
 Builder: It looks like the optimum number of layers is 3 when there are 127 nodes
 SpaceInvadersFrameskip-v4
@@ -40,7 +52,7 @@ import matplotlib.animation as animation
 import numpy as np
 
 
-ENV_NAME = "SpaceInvadersNoFrameskip-v4"
+ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
 if "-ram" in ENV_NAME:
     RAM = True
     SHOW_RAM = False
@@ -50,10 +62,10 @@ else:
     SHOW_RAM = False
     INPUT_SHAPE = (4, 84, 84)
 
-MODEL_USED = "CNN" # SIMPLE / CNN / BUILDER
+MODEL_USED = "SIMPLE" # SIMPLE / CNN / BUILDER
 BUILDER_MODEL_TYPE = "CNN" # SIMPLE OR CNN (only matters for BUILDER models)
-CHROMOSOME = [4, 127, 0.16762467326820363, -0.30084199831130487, 602418869, 127, 0.579589063575082, 0.08030824452678353, 471575520, 127, 0.9061998971422971, -0.04686307526807765, 86548449, 127, 0.13744530377945674, 0.27779087866482044, 1170568538]
-LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_10-08" + "-model.h5")
+CHROMOSOME = [4, 127, -0.494175080060691, -0.6090374638458818, 2143143846, 127, -0.9312494249699099, -0.6761432418135249, 1850620844, 127, -0.18520416191825528, -0.49851696479435637, 50157076, 127, 0.5798854878952928, 0.9357137092989538, 549960925]
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_16-29" + "-model.h5")
 
 
 if RAM:

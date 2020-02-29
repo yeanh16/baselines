@@ -23,13 +23,13 @@ from time import sleep
 gc.enable()
 
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 20
+POPULATION_SIZE = 8
 INITIALISER_WEIGHTS_RANGE = 0.1
 SELECTION_RATE = 0.5
 MUTATE_CHANCE = 0.25  # mutate chance per weight in a model
-MUTATION_POWER = 0.1
-ELITE_RATIO = 0.20
-FITNESS_RUNS = 5  # number of runs to find best fitness score for a chromosome
+MUTATION_POWER = 0.01
+ELITE_RATIO = 0.25
+FITNESS_RUNS = 1  # number of runs to find best fitness score for a chromosome
 NUMBEROFGENERATIONS = 5000
 MODEL_USED = "CNN"  # SIMPLE or CNN
 NUM_WORKERS = 8
@@ -116,7 +116,7 @@ class BuildNeuralNetwork:
             if chromosome_index < len(self.chromosome):
                 mn = min(self.chromosome[chromosome_index + 1], self.chromosome[chromosome_index + 2])
                 mx = max(self.chromosome[chromosome_index + 1], self.chromosome[chromosome_index + 2])
-                kernel_initializer = RandomUniform(minval=mn, maxval=mx, seed=self.chromosome[chromosome_index + 3])
+                kernel_initializer = RandomNormal(mean=mn, stddev=mx, seed=self.chromosome[chromosome_index + 3])
 
             if l == 0:
                 model.add(Conv2D(filters=32,
@@ -170,6 +170,7 @@ class BuildNeuralNetwork:
 
     def save_model(self):
         self.model.save(MODEL_FILEPATH)
+        self.model.summary()
 
     def load_model(self):
         self.model = load_model(LOAD_WEIGHTS_PATH)
@@ -256,7 +257,7 @@ class EA:
                 if count > POPULATION_SIZE * ELITE_RATIO or g == 0:
                     chromosome, episode_reward, frames = self._fitness_test(model)
                     cumulative_frames += frames
-                    print("Chromosome " + str(chromosome) + "\nreward: " + str(episode_reward))
+                    print("CHROMOSOME = " + str(chromosome) + "\nreward: " + str(episode_reward))
                     if episode_reward < min_gen_fitness:
                         min_gen_fitness = episode_reward
                     if episode_reward > max_gen_fitness:
@@ -270,7 +271,7 @@ class EA:
                     if episode_reward > max_gen_fitness:
                         max_gen_fitness = episode_reward
                     gen_cumulative_fitness += episode_reward
-                    print("Chromosome " + str(chromosome) + "\nreward: " + str(pop_fitness[count - 1][1]))
+                    print("CHROMOSOME = " + str(chromosome) + "\nreward: " + str(pop_fitness[count - 1][1]))
 
             # # set up a worker for each model
             # model_counter = 0
@@ -317,7 +318,7 @@ class EA:
                 print("Generation max fitness increase, saving model...")
                 best_fitness = pop_fitness[-1][1]
                 top_model = pop_fitness[-1][0]
-                # pop_fitness[-1][0].save_model()  # save top model
+                #pop_fitness[-1][0].save_model()  # save top model
                 print("Top chromosome: " + str(top_model))
                 best_fitness_last_counter = 0
             else:
@@ -495,7 +496,7 @@ class Logger:
                              "INITIALISER_WEIGHT_RANGE", "MODEL_USED", "FITNESS_RUNS"])
             writer.writerow(
                 [POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE, MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE,
-                 MODEL_USED, FITNESS_RUNS])
+                 MODEL_USED, FITNESS_RUNS, "EABUILDER"])
             writer.writerow(["min", "max", "av", "frames", "time"])
         ##/write header
 
