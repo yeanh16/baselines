@@ -333,10 +333,11 @@ class RamGymWrapper():
     def wrap(env):
         #env = NoopAfterLiveLost(env, noop_min=10)
         #env = NoopResetEnv(env, noop_max=30)
+        #env = EpisodicLifeEnv(env)
         env = TimeLimit(env, max_episode_steps=4000)
-        env = MaxAndSkipEnv(env, skip=4)
+        env = MaxAndSkipEnv(env, skip=3)
         if 'FIRE' in env.unwrapped.get_action_meanings():
             env = FireResetEnv(env)
         env = ProcessRamFrame(env)
-        env = RamFrameStack(env, 4)
+        env = RamFrameStack(env, 3)
         return env

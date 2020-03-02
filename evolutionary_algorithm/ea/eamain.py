@@ -5,10 +5,7 @@ from keras.layers import Conv2D, Flatten, Dense
 from keras.optimizers import RMSprop, Adam, SGD
 from keras.initializers import RandomUniform, RandomNormal
 from evolutionary_algorithm.ea.gym_wrapper import MainGymWrapper, RamGymWrapper
-from pympler.tracker import SummaryTracker
-from pympler import muppy, summary, refbrowser
 
-import ray
 import numpy as np
 import random
 import os
@@ -20,31 +17,30 @@ import gym
 
 from time import sleep
 
-
 gc.enable()
 
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 8
+POPULATION_SIZE = 10
 INITIALISER_WEIGHTS_RANGE = 0.1
 SELECTION_RATE = 0.5
-MUTATE_CHANCE = 0.001  # mutate chance per weight in a model
+MUTATE_CHANCE = 0.01  # mutate chance per weight in a model
 MUTATION_POWER = 0.1
-ELITE_RATIO = 0.25
+ELITE_RATIO = 0.2
 FITNESS_RUNS = 1 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
-MODEL_USED = "SIMPLE" #SIMPLE or anything else
+MODEL_USED = "SIMPLE" #SIMPLE or CNN
 NUM_WORKERS = 8
-FRAMES_IN_OBSERVATION = 4 #if changed, need to also change this value in the gym_wrapper.py file
+FRAMES_IN_OBSERVATION = 3 # f changed, need to also change this value in the gym_wrapper.py file
 FRAME_SIZE = 84
-EPSILON = 0.0  # exploration/random move rate
+EPSILON = 0.00  # exploration/random move rate
 ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
-USE_RAM = False
+SAVING = True
 if "-ram" in ENV_NAME:
     USE_RAM = True
-if not USE_RAM:
-    INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
-else:
     INPUT_SHAPE = (FRAMES_IN_OBSERVATION, 128)
+else:
+    USE_RAM = False
+    INPUT_SHAPE = (FRAMES_IN_OBSERVATION, FRAME_SIZE, FRAME_SIZE)
 os.makedirs(os.path.dirname(__file__) + "/models/" + ENV_NAME, exist_ok=True)
 MODEL_FILEPATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + str(
     datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')) + "-model.h5")
@@ -52,7 +48,7 @@ os.makedirs(os.path.dirname(__file__) + "/logs/" + ENV_NAME, exist_ok=True)
 LOGPATH = str(
     os.path.dirname(__file__) + "/logs/" + ENV_NAME + "/" + str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')))
 USE_LOAD_WEIGHTS = False
-LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_16-29" + "-model.h5")
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_23-01" + "-model.h5")
 
 
 class ConvolutionalNeuralNetwork():
@@ -107,7 +103,7 @@ class ConvolutionalNeuralNetwork():
     def predict(self, state):
         # print("state: " + str(state))
         if np.random.rand() < EPSILON:
-            print("random action taken")
+            #print("random action taken")
             return random.randrange(self.number_of_actions)
         q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
         # print("output layer: " + str(q_values))
@@ -215,7 +211,7 @@ class SimpleNeuralNetwork():
     def predict(self, state):
         # print("state: " + str(state))
         if np.random.rand() < EPSILON:
-            print("random action taken")
+            #print("random action taken")
             return random.randrange(self.number_of_actions)
         q_values = self.model.predict(np.expand_dims(np.asarray(state).astype(np.float64), axis=0), batch_size=1)
         # print("output layer: " + str(q_values))
@@ -330,7 +326,7 @@ class EA:
                 if count > POPULATION_SIZE*ELITE_RATIO or g == 0:
                     _, episode_reward, frames = self._fitness_test(model)
                     cumulative_frames += frames
-                    print("Chromosome " + str(count) + " reward: " + str(episode_reward))
+                    print("Genome " + str(count) + " reward: " + str(episode_reward))
                     if episode_reward < min_gen_fitness:
                         min_gen_fitness = episode_reward
                     if episode_reward > max_gen_fitness:
@@ -344,7 +340,7 @@ class EA:
                     if episode_reward > max_gen_fitness:
                         max_gen_fitness = episode_reward
                     gen_cumulative_fitness += episode_reward
-                    print("Chromosome " + str(count) + " reward: " + str(pop_fitness[count-1][1]))
+                    print("Genome " + str(count) + " reward: " + str(pop_fitness[count-1][1]))
 
             # # set up a worker for each model
             # model_counter = 0
@@ -385,13 +381,16 @@ class EA:
                   + " max_fitness: " + str(max_gen_fitness)
                   + " av_fitness: " + str(av_gen_fitness)
                   + " time: " + str(time.perf_counter() - start_time))
-            self.logger.log_line_csv([min_gen_fitness, max_gen_fitness, av_gen_fitness, cumulative_frames,
-                                      (time.perf_counter() - start_time)])
+            if SAVING:
+                self.logger.log_line_csv([min_gen_fitness, max_gen_fitness, av_gen_fitness, cumulative_frames,
+                                          (time.perf_counter() - start_time)])
             if pop_fitness[-1][1] > best_fitness:
-                print("Generation max fitness increase, saving model...")
+                print("Generation max fitness increase")
                 best_fitness = pop_fitness[-1][1]
                 top_model = pop_fitness[-1][0]
-                pop_fitness[-1][0].save_model()  # save top model
+                if SAVING:
+                    print("Saving model...")
+                    pop_fitness[-1][0].save_model()  # save top model
                 best_fitness_last_counter = 0
             else:
                 best_fitness_last_counter += 1
@@ -413,13 +412,13 @@ class EA:
             # mutation & selection
             while len(new_pop) < POPULATION_SIZE:
                 parent1 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
-                parent2 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
+                #parent2 = copy.deepcopy(self._selection(pop_fitness, type="tournament"))
                 #new_model = copy.deepcopy(selected[np.random.randint(0, int(POPULATION_SIZE*SELECTION_RATE))][0])
-                self._crossover(parent1, parent2)
+                #self._crossover(parent1, parent2)
                 self._mutation(parent1)
-                self._mutation(parent2)
+                #self._mutation(parent2)
                 new_pop.append(parent1)
-                new_pop.append(parent2)
+                #new_pop.append(parent2)
 
             # object_ids = []
             # def _new_model():
@@ -432,6 +431,7 @@ class EA:
 
             # next generation
             self.pop = new_pop
+            #self.pop = self._intialise_pop()
 
             # all_objects = muppy.get_objects()
             # sum1 = summary.summarize(all_objects)
@@ -539,7 +539,7 @@ class EA:
 
 #test_model = SimpleNeuralNetwork((4, 128), 6)
 
-@ray.remote(memory = (300 * 1024 * 1024), object_store_memory=(100*1024*1024))
+#@ray.remote(memory = (300 * 1024 * 1024), object_store_memory=(100*1024*1024))
 class RolloutWorker(object):
     def __init__(self):
         # Tell numpy to only use one core. If we don't do this, each actor may
@@ -589,21 +589,28 @@ class RolloutWorker(object):
 
 class Logger:
     def __init__(self, logpath):
-        self.logpath = logpath
-        ##write header
-        if not os.path.exists(self.logpath):
-            with open(self.logpath, "w"):
-                pass
-        scores_file = open(self.logpath, "a")
-        with scores_file:
-            writer = csv.writer(scores_file)
-            writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO",
-                             "INITIALISER_WEIGHT_RANGE", "MODEL_USED", "FITNESS_RUNS"])
-            writer.writerow(
-                [POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE, MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE,
-                 MODEL_USED, FITNESS_RUNS])
-            writer.writerow(["min", "max", "av", "frames", "time"])
-        ##/write header
+        global USE_LOAD_WEIGHTS, LOAD_WEIGHTS_PATH, SAVING
+        if SAVING:
+            if not USE_LOAD_WEIGHTS:
+                self.logpath = logpath
+            else:
+                self.logpath = LOAD_WEIGHTS_PATH.replace("/models/", "/logs/")
+                self.logpath = self.logpath.replace("-model.h5","")
+
+            if not os.path.exists(self.logpath):
+                with open(self.logpath, "w"):
+                    pass
+            scores_file = open(self.logpath, "a")
+            ##write header
+            with scores_file:
+                writer = csv.writer(scores_file)
+                writer.writerow(["POPULATION_SIZE", "SELECTION_RATE", "MUTATION_CHANCE", "MUTATION_POWER", "ELITE_RATIO",
+                                 "INITIALISER_WEIGHT_RANGE", "MODEL_USED", "FITNESS_RUNS"])
+                writer.writerow(
+                    [POPULATION_SIZE, SELECTION_RATE, MUTATE_CHANCE, MUTATION_POWER, ELITE_RATIO, INITIALISER_WEIGHTS_RANGE,
+                     MODEL_USED, FITNESS_RUNS])
+                writer.writerow(["min", "max", "av", "frames", "time"])
+            ##/write header
 
     def log_line_csv(self, line):
         if not os.path.exists(self.logpath):

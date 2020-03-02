@@ -15,6 +15,12 @@ LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" 
 800 as above (used in log 50 popultion)
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_17-19" + "-model.h5")
 
+900 as above (8 (11 oops) pop)
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_23-03" + "-model.h5")
+
+910 as above FOUND USING RANDOM SEARCH in 11469.35759575601s
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_23-01" + "-model.h5")
+
 
 695 CNN SpaceInvadersNoFrameskip-v4
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_03-21" + "-model.h5")
@@ -37,6 +43,8 @@ SpaceInvaders-ramNoFrameskip-v4
 [3, 127, -0.00802600960001551, 0.37193787474935996, 1863185804, 127, 0.6205937796994904, -0.10831157420869357, 1879081302, 127, 0.9130001984849104, 0.6419841067735436, 1780189885]
 reward: 940.0 NON STABLE
 
+2770 Frostbite-ramNoFrameskip-v4
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-01_20-50" + "-model.h5")
 
 """
 
@@ -52,7 +60,13 @@ import matplotlib.animation as animation
 import numpy as np
 
 
-ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
+ENV_NAME = "Frostbite-ramNoFrameskip-v4"
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-01_20-50" + "-model.h5")
+RANDOM_AGENT = False
+MODEL_USED = "SIMPLE" # SIMPLE / CNN / BUILDER
+BUILDER_MODEL_TYPE = "CNN" # SIMPLE OR CNN (only matters for BUILDER models)
+GENOME = [4, 127, -0.494175080060691, -0.6090374638458818, 2143143846, 127, -0.9312494249699099, -0.6761432418135249, 1850620844, 127, -0.18520416191825528, -0.49851696479435637, 50157076, 127, 0.5798854878952928, 0.9357137092989538, 549960925]
+
 if "-ram" in ENV_NAME:
     RAM = True
     SHOW_RAM = False
@@ -62,10 +76,6 @@ else:
     SHOW_RAM = False
     INPUT_SHAPE = (4, 84, 84)
 
-MODEL_USED = "SIMPLE" # SIMPLE / CNN / BUILDER
-BUILDER_MODEL_TYPE = "CNN" # SIMPLE OR CNN (only matters for BUILDER models)
-CHROMOSOME = [4, 127, -0.494175080060691, -0.6090374638458818, 2143143846, 127, -0.9312494249699099, -0.6761432418135249, 1850620844, 127, -0.18520416191825528, -0.49851696479435637, 50157076, 127, 0.5798854878952928, 0.9357137092989538, 549960925]
-LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_16-29" + "-model.h5")
 
 
 if RAM:
@@ -73,12 +83,13 @@ if RAM:
 else:
     env = MainGymWrapper.wrap(gym.make(ENV_NAME))
 
-if MODEL_USED == "SIMPLE":
-    model = SimpleNeuralNetwork(INPUT_SHAPE, env.action_space.n, filepath=LOAD_WEIGHTS_PATH)
-elif MODEL_USED == "BUILDER":
-    model = BuildNeuralNetwork(INPUT_SHAPE, env.action_space.n, CHROMOSOME, model_type=BUILDER_MODEL_TYPE)
-elif MODEL_USED == "CNN":
-    model = ConvolutionalNeuralNetwork(INPUT_SHAPE, env.action_space.n, filepath=LOAD_WEIGHTS_PATH)
+if not RANDOM_AGENT:
+    if MODEL_USED == "SIMPLE":
+        model = SimpleNeuralNetwork(INPUT_SHAPE, env.action_space.n, filepath=LOAD_WEIGHTS_PATH)
+    elif MODEL_USED == "BUILDER":
+        model = BuildNeuralNetwork(INPUT_SHAPE, env.action_space.n, GENOME, model_type=BUILDER_MODEL_TYPE)
+    elif MODEL_USED == "CNN":
+        model = ConvolutionalNeuralNetwork(INPUT_SHAPE, env.action_space.n, filepath=LOAD_WEIGHTS_PATH)
 
 terminated = False
 state = env.reset()
@@ -115,11 +126,19 @@ if SHOW_RAM:
         pyplot.show()
 
 else:
-    while not terminated:
-        action = model.predict(state)
-        state, reward, terminated, _ = env.step(action)
-        env.render()
-        #sleep(0.001)
-        total_reward += reward
+    while True:
+        total_reward = 0
+        while not terminated:
+            if RANDOM_AGENT:
+                action = env.action_space.sample()
+            else:
+                action = model.predict(state)
+            state, reward, terminated, _ = env.step(action)
+            env.render()
+            sleep(0.05)
+            total_reward += reward
+        print(total_reward)
+        state = env.reset()
+        terminated = False
 
 print("Final reward: " + str(total_reward))
