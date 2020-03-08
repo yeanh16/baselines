@@ -310,6 +310,19 @@ class TimeLimit(gym.Wrapper):
         self._elapsed_steps = 0
         return self.env.reset(**kwargs)
 
+class NegativeTime(gym.Wrapper):
+    """
+    For each step taken, apply a -1 reward if no rewards gained
+    """
+    def __init__(self, env):
+        super(NegativeTime, self).__init__(env)
+
+    def step(self, ac):
+        observation, reward, done, info = self.env.step(ac)
+        if reward == 0:
+            reward = -0.001
+        return observation, reward, done, info
+
 class MainGymWrapper():
 
     @staticmethod
@@ -318,12 +331,12 @@ class MainGymWrapper():
         #env = NoopAfterLiveLost(env, noop_min=10)
         #env = NoopResetEnv(env, noop_min=10, noop_max=30)
         env = TimeLimit(env, max_episode_steps=4000)
-        env = MaxAndSkipEnv(env, skip=4)
+        env = MaxAndSkipEnv(env, skip=3)
         if 'FIRE' in env.unwrapped.get_action_meanings():
             env = FireResetEnv(env)
         env = ProcessFrame84(env)
         env = ChannelsFirstImageShape(env)
-        env = FrameStack(env, 4)
+        env = FrameStack(env, 3)
         # env = ClippedRewardsWrapper(env)
         return env
 
@@ -335,9 +348,10 @@ class RamGymWrapper():
         #env = NoopResetEnv(env, noop_max=30)
         #env = EpisodicLifeEnv(env)
         env = TimeLimit(env, max_episode_steps=4000)
-        env = MaxAndSkipEnv(env, skip=3)
+        #env = MaxAndSkipEnv(env, skip=4)
         if 'FIRE' in env.unwrapped.get_action_meanings():
             env = FireResetEnv(env)
         env = ProcessRamFrame(env)
         env = RamFrameStack(env, 3)
+        env = NegativeTime(env)
         return env

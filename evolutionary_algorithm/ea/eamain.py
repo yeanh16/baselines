@@ -20,17 +20,17 @@ from time import sleep
 gc.enable()
 
 ##Make sure selection rate and elite ratio produce integers from population size
-POPULATION_SIZE = 10
+POPULATION_SIZE = 50
 INITIALISER_WEIGHTS_RANGE = 0.1
 SELECTION_RATE = 0.5
 MUTATE_CHANCE = 0.01  # mutate chance per weight in a model
-MUTATION_POWER = 0.1
-ELITE_RATIO = 0.2
+MUTATION_POWER = 0.02
+ELITE_RATIO = 0.1
 FITNESS_RUNS = 1 #number of runs to average for fitness score
 NUMBEROFGENERATIONS = 5000
 MODEL_USED = "SIMPLE" #SIMPLE or CNN
 NUM_WORKERS = 8
-FRAMES_IN_OBSERVATION = 3 # f changed, need to also change this value in the gym_wrapper.py file
+FRAMES_IN_OBSERVATION = 3 # if changed, need to also change this value in the gym_wrapper.py file
 FRAME_SIZE = 84
 EPSILON = 0.00  # exploration/random move rate
 ENV_NAME = "SpaceInvaders-ramNoFrameskip-v4"
@@ -444,6 +444,10 @@ class EA:
             weights = model.get_weights()
             for a in range(0, len(weights)):  # 10
                 a_layer = weights[a]
+                if not isinstance(a_layer, np.ndarray):
+                    if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                        weights[a] = self._random_weight(weights[a])
+                    continue
                 for b in range(0, len(a_layer)):  # 8
                     b_layer = a_layer[b]
                     if not isinstance(b_layer, np.ndarray):
@@ -458,6 +462,10 @@ class EA:
                             continue
                         for d in range(0, len(c_layer)):  # 4
                             d_layer = c_layer[d]
+                            if not isinstance(b_layer, np.ndarray):
+                                if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
+                                    weights[a][b][c][d] = self._random_weight(weights[a][b][c][d])
+                                continue
                             for e in range(0, len(d_layer)):  # 32
                                 if np.random.choice([True, False], p=[MUTATE_CHANCE, 1 - MUTATE_CHANCE]):
                                     weights[a][b][c][d][e] = self._random_weight(weights[a][b][c][d][e])
@@ -529,8 +537,9 @@ class EA:
                 state, reward, terminated, _ = self.env.step(action)
                 frames_count += 1
                 #self.env.render()
-                episode_reward += reward
                 #sleep(0.01)
+                episode_reward += reward
+
             # print(str(episode_reward))
             total += episode_reward
             state = self.env.reset()

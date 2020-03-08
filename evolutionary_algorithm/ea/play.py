@@ -9,6 +9,7 @@ LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" 
 1025 SIMPLE SpaceInvaders-ramNoFrameskip-v4
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-24_03-21" + "-model.h5")
 
+SpaceInvaders-ramNoFrameskip-v4 ====(128, 64, 32)=============================================================================================
 820 (/5) SIMPLE (128, 64, 32) SpaceInvaders-ramNoFrameskip-v4 - SEEMS TO BE STABLE WITH THIS ARCHITECTURE!!!!
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_16-29" + "-model.h5")
 
@@ -20,6 +21,12 @@ LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" 
 
 910 as above FOUND USING RANDOM SEARCH in 11469.35759575601s
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-02-29_23-01" + "-model.h5")
+
+945 (3 frames)
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-02_08-28" + "-model.h5")
+
+1060 (3 frames)
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-03_15-52" + "-model.h5")
 
 
 695 CNN SpaceInvadersNoFrameskip-v4
@@ -46,6 +53,10 @@ reward: 940.0 NON STABLE
 2770 Frostbite-ramNoFrameskip-v4
 LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-01_20-50" + "-model.h5")
 
+41.8 Enduro-ramNoFrameskip-v4 (trained for 6M frames, using time reward loss of -0.001 per frame and 3 frame skip)
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-07_20-00" + "-model.h5")
+
+
 """
 
 import gym
@@ -60,21 +71,22 @@ import matplotlib.animation as animation
 import numpy as np
 
 
-ENV_NAME = "Frostbite-ramNoFrameskip-v4"
-LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-01_20-50" + "-model.h5")
+ENV_NAME = "Enduro-ramNoFrameskip-v4"
+LOAD_WEIGHTS_PATH = str(os.path.dirname(__file__) + "/models/" + ENV_NAME + "/" + "2020-03-07_20-00" + "-model.h5")
 RANDOM_AGENT = False
 MODEL_USED = "SIMPLE" # SIMPLE / CNN / BUILDER
 BUILDER_MODEL_TYPE = "CNN" # SIMPLE OR CNN (only matters for BUILDER models)
 GENOME = [4, 127, -0.494175080060691, -0.6090374638458818, 2143143846, 127, -0.9312494249699099, -0.6761432418135249, 1850620844, 127, -0.18520416191825528, -0.49851696479435637, 50157076, 127, 0.5798854878952928, 0.9357137092989538, 549960925]
 
+FRAMES_IN_OBSERVATION = 3
 if "-ram" in ENV_NAME:
     RAM = True
     SHOW_RAM = False
-    INPUT_SHAPE = (4, 128)
+    INPUT_SHAPE = (FRAMES_IN_OBSERVATION, 128)
 else:
     RAM = False
     SHOW_RAM = False
-    INPUT_SHAPE = (4, 84, 84)
+    INPUT_SHAPE = (FRAMES_IN_OBSERVATION, 84, 84)
 
 
 
@@ -99,15 +111,22 @@ reward = 0
 if SHOW_RAM:
     while not terminated:
         fig = pyplot.figure()
-        action = model.predict(state)
+        if RANDOM_AGENT:
+            action = env.action_space.sample()
+        else:
+            action = model.predict(state)
 
         def animate(i):
             global state, reward, terminated, action, total_reward
+            if RANDOM_AGENT:
+                action = env.action_space.sample()
+            else:
+                action = model.predict(state)
             state, reward, terminated, _ = env.step(action)
             env.render()
             total_reward += reward
 
-            showstate = np.array(state)[3]
+            showstate = np.array(state)[FRAMES_IN_OBSERVATION-1]
             showstate = np.pad(showstate, (0, 16), 'constant', constant_values=(0, 0))
             showstate = showstate.reshape((12, 12))
 
@@ -135,7 +154,7 @@ else:
                 action = model.predict(state)
             state, reward, terminated, _ = env.step(action)
             env.render()
-            sleep(0.05)
+            sleep(0.01)
             total_reward += reward
         print(total_reward)
         state = env.reset()
